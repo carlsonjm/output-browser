@@ -1,0 +1,45 @@
+name: Build CEF
+
+# Runs only when started by hand, never on pull requests: the job runs on a
+# self-hosted machine, and a public repository must not let outside pull
+# requests run code there.
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Chromium branch (third part of the version, e.g. 8078 for 156.0.8078.109)
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-cef
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: [self-hosted, mini]
+    timeout-minutes: 1440
+    env:
+      CEF_BUILD_DIR: ${{ runner.temp }}/../cef-build
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check free disk
+        run: |
+          mkdir -p "$CEF_BUILD_DIR"
+          free=$(df -BG --output=avail "$CEF_BUILD_DIR" | tail -1 | tr -dc 0-9)
+          echo "free: ${free} GB"
+          [ "$free" -ge 110 ] || { echo "needs about 110 GB free"; exit 1; }
+      - name: Build
+        run: bash tools/build-cef.sh "${{ inputs.branch }}"
+      - name: Attach to a draft release
+        # A draft release is visible only to people with write access, so the
+        # build is not published.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="cef-${{ inputs.branch }}-${{ github.run_number }}"
+          gh release create "$tag" --draft --title "CEF build $tag" \
+            --notes "CEF with Widevine and H.264/AAC, Chromium branch ${{ inputs.branch }}." \
+            "$CEF_BUILD_DIR"/download/chromium/src/cef/binary_distrib/*.tar.bz2
