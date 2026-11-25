@@ -78,6 +78,15 @@ void Round(unsigned long w, int width, int height, int r) {
   XFlush(D());
 }
 
+bool Size(unsigned long w, int* width, int* height) {
+  if (!D() || !w) return false;
+  XWindowAttributes a{};
+  if (!XGetWindowAttributes(D(), w, &a)) return false;
+  *width = a.width;
+  *height = a.height;
+  return true;
+}
+
 bool EnsureParent(unsigned long w, unsigned long parent) {
   if (!D() || !w || !parent) return false;
   XSync(D(), False);

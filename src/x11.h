@@ -11,6 +11,8 @@ void Place(unsigned long w, int x, int y, int width, int height);
 void Show(unsigned long w, bool show);
 // Gives the window round corners of |r| pixels, or clears the shape when r <= 0.
 void Round(unsigned long w, int width, int height, int r);
+// The size of a window in pixels. Returns false if it cannot be read.
+bool Size(unsigned long w, int* width, int* height);
 // Makes sure |w| is a child of |parent|, reparenting it if it is not.
 // Returns true when it had to be moved.
 bool EnsureParent(unsigned long w, unsigned long parent);

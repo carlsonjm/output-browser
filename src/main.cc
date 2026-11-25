@@ -268,6 +268,11 @@ class Win : public CefWindowDelegate {
     return b ? b->GetHost()->TryCloseBrowser() : true;
   }
 
+  void OnWindowBoundsChanged(CefRefPtr<CefWindow>, const CefRect&) override {
+    PlaceActive();
+    if (menu_open_) CloseMenu();
+  }
+
   void OnLayoutChanged(CefRefPtr<CefView> v, const CefRect&) override {
     if (!content_ || !v || !v->IsSame(content_)) return;
     PlaceActive();
@@ -332,6 +337,13 @@ class Win : public CefWindowDelegate {
     x11::Show(t->xid(), true);
     if (old && old != t) x11::Show(old->xid(), false);
     Log("showing tab " + std::to_string(id) + ": " + x11::Describe(t->xid()));
+    // Place again once the window has settled, in case its size was not final.
+    CefRefPtr<Win> self(this);
+    Post([self, id] {
+      if (self->active_ != id) return;
+      self->PlaceActive();
+      if (Tab* tt = self->Find(id)) Log("tab " + std::to_string(id) + " now: " + x11::Describe(tt->xid()));
+    }, 300);
     t->browser->GetHost()->SetFocus(true);
     if (menu_open_) CloseMenu();
     PushState();
@@ -556,17 +568,20 @@ class Win : public CefWindowDelegate {
 
   int UiHeight() const { return fullscreen_ ? 0 : kNavH + (fold_ ? kStripH : 0); }
 
-  // The page box in pixels, relative to the main window.
+  // The page box in pixels, relative to the main window: the window less the
+  // row (and strip) above and the 8 px margin on the other sides. Worked out
+  // from the main window's own size, which is always current.
   CefRect PageRectPx() {
-    if (!window_ || !content_) return CefRect(0, 0, 800, 600);
-    const CefRect c = content_->GetBounds();
-    const int i = fullscreen_ ? 0 : kInset;
     const float s = Scale();
-    const int x = static_cast<int>(std::lround((c.x + i) * s));
-    const int y = static_cast<int>(std::lround(c.y * s));
-    const int w = static_cast<int>(std::lround((c.width - 2 * i) * s));
-    const int h = static_cast<int>(std::lround((c.height - i) * s));
-    return CefRect(x, y, std::max(w, 1), std::max(h, 1));
+    int ww = 0, wh = 0;
+    if (!window_ || !x11::Size(window_->GetWindowHandle(), &ww, &wh) || ww < 2 || wh < 2) {
+      const CefRect b = window_ ? window_->GetClientAreaBoundsInScreen() : CefRect(0, 0, 1280, 860);
+      ww = static_cast<int>(std::lround(b.width * s));
+      wh = static_cast<int>(std::lround(b.height * s));
+    }
+    const int i = static_cast<int>(std::lround((fullscreen_ ? 0 : kInset) * s));
+    const int top = static_cast<int>(std::lround(UiHeight() * s));
+    return CefRect(i, top, std::max(ww - 2 * i, 1), std::max(wh - top - i, 1));
   }
 
   void PlaceActive() {
@@ -576,6 +591,8 @@ class Win : public CefWindowDelegate {
     if (x11::EnsureParent(t->xid(), window_->GetWindowHandle()))
       Log("tab " + std::to_string(t->id) + " was not inside the main window; moved it in");
     x11::Place(t->xid(), r.x, r.y, r.width, r.height);
+    Log("place tab " + std::to_string(t->id) + " at " + std::to_string(r.x) + "," +
+        std::to_string(r.y) + " size " + std::to_string(r.width) + "x" + std::to_string(r.height));
     const int radius = Flag("square-corners") || fullscreen_
                            ? 0 : static_cast<int>(std::lround(kRadius * Scale()));
     x11::Round(t->xid(), r.width, r.height, radius);
