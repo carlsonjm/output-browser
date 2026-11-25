@@ -234,7 +234,9 @@ class Win : public CefWindowDelegate {
     w->Show();
     CefRefPtr<Win> self(this);
     const std::string first = first_;
-    Post([self, first] { self->NewTab(first, true); });
+    // The first tab waits until the new window is on screen at its real size.
+    // A tab embedded while the window is still being mapped never paints.
+    Post([self, first] { self->NewTab(first, true); }, 400);
   }
 
   void OnWindowDestroyed(CefRefPtr<CefWindow>) override {
@@ -337,6 +339,7 @@ class Win : public CefWindowDelegate {
       const std::string u = tt->first_url;
       tt->first_url.clear();
       tt->browser->GetMainFrame()->LoadURL(u);
+      Log("tab " + std::to_string(id) + " loads " + u);
     }, 100);
     PushState();
   }
