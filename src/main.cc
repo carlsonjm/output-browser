@@ -1,21 +1,21 @@
 // Output Browser.
 //
 // Pages are CEF Chrome-style browsers, so they behave as Chrome does. The row,
-// the tab strip, the menu and the start page are our own HTML, drawn in small
-// Alloy-style browsers around the page.
+// the tab strip, the menu and the start page are our own HTML.
 //
-// CEF allows one Chrome-style browser in a window, and only while that window
-// has no other browser yet. So every tab is created in its own hidden holder
-// window, and the tab that is showing is moved into the main window. Moving a
-// browser that already exists between windows is supported.
+// A CEF window can hold only one Chrome-style page, and a page cannot move to
+// another window. So the main window holds only our row, and each tab is a
+// Chrome-style browser embedded in the main window as a child window (X11).
+// The tab that is showing sits over the page box; the others are hidden.
 #include <unistd.h>
 
 #include <algorithm>
 #include <chrono>
 #include <climits>
 #include <cmath>
+#include <cstdio>
+#include <deque>
 #include <functional>
-#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -25,19 +25,17 @@
 #include "include/cef_browser.h"
 #include "include/cef_command_ids.h"
 #include "include/cef_command_line.h"
-#include "include/cef_image.h"
 #include "include/cef_parser.h"
 #include "include/cef_request_context.h"
 #include "include/cef_task.h"
 #include "include/views/cef_box_layout.h"
 #include "include/views/cef_browser_view.h"
 #include "include/views/cef_browser_view_delegate.h"
-#include "include/views/cef_fill_layout.h"
-#include "include/views/cef_label_button.h"
-#include "include/views/cef_overlay_controller.h"
+#include "include/views/cef_display.h"
 #include "include/views/cef_panel.h"
 #include "include/views/cef_window.h"
 #include "include/views/cef_window_delegate.h"
+#include "x11.h"
 
 namespace {
 
@@ -47,6 +45,7 @@ constexpr int kNavH = 44;    // the row
 constexpr int kStripH = 48;  // the tab strip, 40 plus its 8 below
 constexpr int kInset = 8;    // page box margin: 0 8 8
 constexpr int kRadius = 10;  // page box corners
+constexpr int kMenuW = 294, kMenuH = 400;  // until the menu reports its size
 
 std::string g_ui;  // folder holding bar.html, menu.html and start.html
 int g_browsers = 0;
@@ -55,6 +54,12 @@ int g_windows = 0;
 std::string UiUrl(const std::string& f) { return "file://" + g_ui + "/" + f; }
 std::string StartUrl() { return UiUrl("start.html"); }
 bool IsStart(const std::string& u) { return u.rfind(StartUrl(), 0) == 0; }
+bool Flag(const char* name) { return CefCommandLine::GetGlobalCommandLine()->HasSwitch(name); }
+
+void Log(const std::string& s) {
+  fprintf(stderr, "[output-browser] %s\n", s.c_str());
+  fflush(stderr);
+}
 
 void MaybeQuit() {
   if (g_browsers == 0 && g_windows == 0) CefQuitMessageLoop();
@@ -68,8 +73,7 @@ class FnTask : public CefTask {
   std::function<void()> f_;
   IMPLEMENT_REFCOUNTING(FnTask);
 };
-// Runs |f| on the UI thread after the current callback returns. Views are
-// never moved from inside a CEF callback.
+// Runs |f| on the UI thread after the current callback returns.
 void Post(std::function<void()> f, int64_t delay_ms = 0) {
   if (delay_ms > 0)
     CefPostDelayedTask(TID_UI, new FnTask(std::move(f)), delay_ms);
@@ -101,18 +105,6 @@ int64_t NowMs() {
              std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
-// ---------------------------------------------------------------- delegates
-
-class PageDelegate : public CefBrowserViewDelegate {
- public:
-  ChromeToolbarType GetChromeToolbarType(CefRefPtr<CefBrowserView>) override {
-    return CEF_CTT_NONE;  // the row is ours
-  }
-  cef_runtime_style_t GetBrowserRuntimeStyle() override { return CEF_RUNTIME_STYLE_CHROME; }
- private:
-  IMPLEMENT_REFCOUNTING(PageDelegate);
-};
-
 class UiDelegate : public CefBrowserViewDelegate {
  public:
   int height = kNavH;
@@ -122,80 +114,14 @@ class UiDelegate : public CefBrowserViewDelegate {
   IMPLEMENT_REFCOUNTING(UiDelegate);
 };
 
-class Inert : public CefButtonDelegate {
- public:
-  void OnButtonPressed(CefRefPtr<CefButton>) override {}
- private:
-  IMPLEMENT_REFCOUNTING(Inert);
-};
-
-// A hidden window that holds one tab while it is not showing, and is where
-// the tab's browser is created.
-class HolderWin : public CefWindowDelegate {
- public:
-  HolderWin(CefRefPtr<CefBrowserView> v, CefSize size) : view_(v), size_(size) {}
-  void OnWindowCreated(CefRefPtr<CefWindow> w) override {
-    w->SetToFillLayout();
-    w->AddChildView(view_);
-  }
-  void OnWindowDestroyed(CefRefPtr<CefWindow>) override { view_ = nullptr; }
-  bool IsFrameless(CefRefPtr<CefWindow>) override { return true; }
-  CefRect GetInitialBounds(CefRefPtr<CefWindow>) override {
-    return CefRect(0, 0, size_.width, size_.height);
-  }
-  bool CanClose(CefRefPtr<CefWindow>) override {
-    auto b = view_ ? view_->GetBrowser() : nullptr;
-    return b ? b->GetHost()->TryCloseBrowser() : true;
-  }
- private:
-  CefRefPtr<CefBrowserView> view_;
-  CefSize size_;
-  IMPLEMENT_REFCOUNTING(HolderWin);
-};
-
-// Round page corners: four small images, drawn over the page in the chrome
-// colour outside a 10 px arc. corner: 0 top left, 1 top right, 2 bottom left,
-// 3 bottom right.
-CefRefPtr<CefImage> CornerImage(int corner) {
-  auto img = CefImage::CreateImage();
-  for (int scale : {1, 2, 3}) {
-    const int n = kRadius * scale;
-    std::vector<uint8_t> px(static_cast<size_t>(n) * n * 4);
-    for (int y = 0; y < n; ++y) {
-      for (int x = 0; x < n; ++x) {
-        int out = 0;
-        for (int sy = 0; sy < 4; ++sy) {
-          for (int sx = 0; sx < 4; ++sx) {
-            double dx = (x + (sx + 0.5) / 4.0) / scale;
-            double dy = (y + (sy + 0.5) / 4.0) / scale;
-            if (corner == 1 || corner == 3) dx = kRadius - dx;
-            if (corner == 2 || corner == 3) dy = kRadius - dy;
-            if (std::hypot(kRadius - dx, kRadius - dy) > kRadius) ++out;
-          }
-        }
-        const int a = out * 255 / 16;
-        const uint8_t c = static_cast<uint8_t>(0x1C * a / 255);
-        uint8_t* p = &px[(static_cast<size_t>(y) * n + x) * 4];
-        p[0] = c; p[1] = c; p[2] = c; p[3] = static_cast<uint8_t>(a);
-      }
-    }
-    img->AddBitmap(static_cast<float>(scale), n, n, CEF_COLOR_TYPE_BGRA_8888,
-                   CEF_ALPHA_TYPE_PREMULTIPLIED, px.data(), px.size());
-  }
-  return img;
-}
-
-// ------------------------------------------------------------------ window
-
 class Win;
 
 struct Tab {
   int id = 0;
-  int browser_id = 0;
-  CefRefPtr<CefBrowserView> view;
-  CefRefPtr<CefWindow> holder;
+  CefRefPtr<CefBrowser> browser;  // set once created
   std::string url, title, fav;
   bool loading = false, back = false, fwd = false, closing = false;
+  unsigned long xid() const { return browser ? browser->GetHost()->GetWindowHandle() : 0; }
 };
 
 class PageClient : public CefClient, public CefLifeSpanHandler,
@@ -211,7 +137,6 @@ class PageClient : public CefClient, public CefLifeSpanHandler,
   CefRefPtr<CefDownloadHandler> GetDownloadHandler() override { return this; }
 
   void OnAfterCreated(CefRefPtr<CefBrowser> b) override;
-  bool DoClose(CefRefPtr<CefBrowser> b) override;
   void OnBeforeClose(CefRefPtr<CefBrowser> b) override;
   bool OnBeforePopup(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame>, int,
                      const CefString& target_url, const CefString&,
@@ -227,7 +152,7 @@ class PageClient : public CefClient, public CefLifeSpanHandler,
   void OnFullscreenModeChange(CefRefPtr<CefBrowser> b, bool fs) override;
   void OnLoadingStateChange(CefRefPtr<CefBrowser> b, bool loading, bool back,
                             bool fwd) override;
-  bool OnPreKeyEvent(CefRefPtr<CefBrowser>, const CefKeyEvent& e,
+  bool OnPreKeyEvent(CefRefPtr<CefBrowser> b, const CefKeyEvent& e,
                      CefEventHandle, bool*) override;
   bool OnBeforeDownload(CefRefPtr<CefBrowser>, CefRefPtr<CefDownloadItem>,
                         const CefString&,
@@ -251,8 +176,8 @@ class UiClient : public CefClient, public CefLifeSpanHandler,
   CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
   CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
   CefRefPtr<CefKeyboardHandler> GetKeyboardHandler() override { return this; }
-  void OnAfterCreated(CefRefPtr<CefBrowser>) override { ++g_browsers; }
-  void OnBeforeClose(CefRefPtr<CefBrowser>) override { --g_browsers; MaybeQuit(); }
+  void OnAfterCreated(CefRefPtr<CefBrowser> b) override;
+  void OnBeforeClose(CefRefPtr<CefBrowser> b) override;
   bool OnConsoleMessage(CefRefPtr<CefBrowser>, cef_log_severity_t,
                         const CefString& message, const CefString& source,
                         int) override;
@@ -275,7 +200,14 @@ class Win : public CefWindowDelegate {
     }
   }
 
+  static void OpenWindow(bool priv, const std::string& url) {
+    CefWindow::CreateTopLevelWindow(new Win(priv, url));
+  }
+
   // ---- window
+
+  // The main window holds only our own (Alloy-style) browser for the row.
+  cef_runtime_style_t GetWindowRuntimeStyle() override { return CEF_RUNTIME_STYLE_ALLOY; }
 
   void OnWindowCreated(CefRefPtr<CefWindow> w) override {
     window_ = w;
@@ -292,51 +224,25 @@ class Win : public CefWindowDelegate {
                                                  nullptr, nullptr, ui_delegate_);
     w->AddChildView(ui_view_);
 
+    // The page box area. Tabs are laid over it as child windows.
     content_ = CefPanel::CreatePanel(this);
     content_->SetBackgroundColor(kChrome);
-    content_layout_ = content_->SetToBoxLayout(ContentLayout());
     w->AddChildView(content_);
     layout->SetFlexForView(content_, 1);
 
-    if (!CefCommandLine::GetGlobalCommandLine()->HasSwitch("square-corners")) {
-      for (int i = 0; i < 4; ++i) {
-        auto b = CefLabelButton::CreateLabelButton(new Inert, "");
-        b->SetImage(CEF_BUTTON_STATE_NORMAL, CornerImage(i));
-        b->SetInkDropEnabled(false);
-        b->SetFocusable(false);
-        b->SetInsets(CefInsets(0, 0, 0, 0));
-        b->SetBackgroundColor(0);
-        b->SetHorizontalAlignment(CEF_HORIZONTAL_ALIGNMENT_LEFT);
-        corners_[i] = w->AddOverlayView(b, CEF_DOCKING_MODE_CUSTOM, false);
-        corners_[i]->SetVisible(false);
-      }
-    }
-
-    // The menu is its own small browser, laid over the page when open.
-    CefBrowserSettings ms;
-    ms.background_color = kMenu;
-    auto md = new UiDelegate;
-    md->height = 0;
-    menu_view_ = CefBrowserView::CreateBrowserView(ui_client_, UiUrl("menu.html"), ms,
-                                                   nullptr, nullptr, md);
-    menu_ = w->AddOverlayView(menu_view_, CEF_DOCKING_MODE_CUSTOM, true);
-    menu_->SetBounds(CefRect(0, 0, 1, 1));
-    menu_->SetVisible(false);
-
     w->Show();
-    NewTab(first_, true, false);
+    CefRefPtr<Win> self(this);
+    const std::string first = first_;
+    Post([self, first] { self->NewTab(first, true); });
   }
 
   void OnWindowDestroyed(CefRefPtr<CefWindow>) override {
     page_client_->Detach();
     ui_client_->Detach();
-    for (auto& c : corners_) c = nullptr;
-    menu_ = nullptr;
-    menu_view_ = nullptr;
     ui_view_ = nullptr;
-    content_layout_ = nullptr;
     content_ = nullptr;
     window_ = nullptr;
+    menu_ = nullptr;
     --g_windows;
     MaybeQuit();
   }
@@ -349,59 +255,82 @@ class Win : public CefWindowDelegate {
   bool CanClose(CefRefPtr<CefWindow>) override {
     closing_all_ = true;
     CloseMenu();
-    std::vector<int> ids = order_;
-    for (int id : ids) CloseTab(id);
-    if (!tabs_.empty()) return false;
-    bool ok = true;
-    for (auto v : {ui_view_, menu_view_}) {
-      if (v && v->GetBrowser()) ok = v->GetBrowser()->GetHost()->TryCloseBrowser() && ok;
+    for (auto& t : tabs_) {
+      if (!t->closing && t->browser) {
+        t->closing = true;
+        t->browser->GetHost()->CloseBrowser(false);
+      }
     }
-    return ok;
+    pending_.clear();
+    if (!tabs_.empty()) return false;
+    if (menu_) menu_->GetHost()->CloseBrowser(true);
+    auto b = ui_view_ ? ui_view_->GetBrowser() : nullptr;
+    return b ? b->GetHost()->TryCloseBrowser() : true;
   }
 
-  void OnLayoutChanged(CefRefPtr<CefView> v, const CefRect& r) override {
+  void OnLayoutChanged(CefRefPtr<CefView> v, const CefRect&) override {
     if (!content_ || !v || !v->IsSame(content_)) return;
-    PlaceCorners(r);
+    PlaceActive();
     if (menu_open_) CloseMenu();
   }
 
   // ---- tabs
 
-  void NewTab(const std::string& url, bool activate, bool after_active) {
+  void NewTab(const std::string& url, bool activate) {
     if (!window_ || closing_all_) return;
+    const unsigned long parent = window_->GetWindowHandle();
+    if (!parent) {
+      Log("main window has no X11 window handle; is the browser running on X11?");
+      return;
+    }
     auto t = std::make_unique<Tab>();
     t->id = ++next_id_;
     t->url = url;
     t->title = IsStart(url) ? "New tab" : url;
-    t->view = CefBrowserView::CreateBrowserView(page_client_, url, CefBrowserSettings(),
-                                                nullptr, context_, new PageDelegate);
-    CefRect cb = content_->GetBounds();
-    CefSize size(std::max(200, cb.width - 2 * kInset), std::max(200, cb.height - kInset));
-    t->holder = CefWindow::CreateTopLevelWindow(new HolderWin(t->view, size));
-    if (auto b = t->view->GetBrowser()) t->browser_id = b->GetIdentifier();
+    pending_.push_back({t->id, activate});
     const int id = t->id;
-    auto pos = order_.end();
-    if (after_active) {
-      auto a = std::find(order_.begin(), order_.end(), active_);
-      if (a != order_.end()) pos = a + 1;
+    // New tabs go after the one showing, as Chrome places them.
+    auto pos = tabs_.end();
+    if (Tab* a = Find(active_)) {
+      pos = std::find_if(tabs_.begin(), tabs_.end(), [a](auto& x) { return x.get() == a; }) + 1;
+      if (pos > tabs_.end()) pos = tabs_.end();
     }
-    order_.insert(pos, id);
-    tabs_[id] = std::move(t);
-    if (activate) Activate(id);
-    else PushState();
+    tabs_.insert(pos, std::move(t));
+
+    CefWindowInfo info;
+    const CefRect r = PageRectPx();
+    info.SetAsChild(parent, r);
+    info.runtime_style = CEF_RUNTIME_STYLE_CHROME;
+    CefBrowserHost::CreateBrowser(info, page_client_, url, CefBrowserSettings(), nullptr,
+                                  context_);
+    Log("new tab " + std::to_string(id) + " " + url);
+    PushState();
+  }
+
+  // Called when a tab's browser exists.
+  void TabCreated(CefRefPtr<CefBrowser> b) {
+    if (pending_.empty()) return;
+    auto [id, activate] = pending_.front();
+    pending_.pop_front();
+    Tab* t = Find(id);
+    if (!t) { b->GetHost()->CloseBrowser(true); return; }
+    t->browser = b;
+    Log("tab " + std::to_string(id) + " created, x11 window " + std::to_string(t->xid()));
+    if (activate || !Find(active_)) Activate(id);
+    else x11::Show(t->xid(), false);
+    PushState();
   }
 
   void Activate(int id) {
     Tab* t = Find(id);
-    if (!t || t->closing || !window_) return;
-    if (active_ == id) { FocusPage(); return; }
-    if (Tab* a = Find(active_)) MoveToHolder(a);
-    t->holder->RemoveChildView(t->view);
-    content_->AddChildView(t->view);
-    content_layout_->SetFlexForView(t->view, 1);
-    content_->Layout();
+    if (!t || t->closing || !t->browser || !window_) return;
+    Tab* old = Find(active_);
     active_ = id;
-    FocusPage();
+    PlaceActive();
+    x11::Show(t->xid(), true);
+    if (old && old != t) x11::Show(old->xid(), false);
+    t->browser->GetHost()->SetFocus(true);
+    if (menu_open_) CloseMenu();
     PushState();
   }
 
@@ -409,70 +338,44 @@ class Win : public CefWindowDelegate {
     Tab* t = Find(id);
     if (!t || t->closing) return;
     t->closing = true;
-    if (active_ == id) {
-      const int next = Neighbour(id);
-      MoveToHolder(t);
-      active_ = 0;
-      if (next && !closing_all_) Activate(next);
-      else if (!closing_all_ && window_) {
-        CefRefPtr<CefWindow> w = window_;
-        Post([w] { if (!w->IsClosed()) w->Close(); });  // last tab: close the window
-      }
-    }
-    t->holder->Close();
+    if (active_ == id) ActivateNeighbour(id);
+    if (t->browser) t->browser->GetHost()->CloseBrowser(false);
     PushState();
   }
 
   // ---- from the page client
 
   Tab* TabFor(CefRefPtr<CefBrowser> b) {
-    const int bid = b->GetIdentifier();
-    for (auto& [id, t] : tabs_) {
-      if (t->browser_id == bid) return t.get();
-      if (!t->browser_id && t->view->GetBrowser() && t->view->GetBrowser()->IsSame(b)) {
-        t->browser_id = bid;
-        return t.get();
-      }
-    }
+    for (auto& t : tabs_)
+      if (t->browser && t->browser->IsSame(b)) return t.get();
     return nullptr;
-  }
-  bool IsActive(Tab* t) { return t && t->id == active_; }
-
-  // A page asked to close itself (window.close()). Close it as a tab, so the
-  // main window is not closed with it.
-  bool PageWantsClose(CefRefPtr<CefBrowser> b) {
-    Tab* t = TabFor(b);
-    if (!t || t->closing) return false;
-    CefRefPtr<Win> self(this);
-    const int id = t->id;
-    Post([self, id] { self->CloseTab(id); });
-    return true;
   }
 
   void PageClosed(CefRefPtr<CefBrowser> b) {
     Tab* t = TabFor(b);
     if (!t) return;
     const int id = t->id;
-    if (active_ == id) active_ = 0;
-    order_.erase(std::remove(order_.begin(), order_.end(), id), order_.end());
-    tabs_.erase(id);
+    if (active_ == id) ActivateNeighbour(id);
+    tabs_.erase(std::remove_if(tabs_.begin(), tabs_.end(), [id](auto& x) { return x->id == id; }),
+                tabs_.end());
     PushState();
-    if (closing_all_ && tabs_.empty() && window_) {
+    if (tabs_.empty() && pending_.empty() && window_) {
+      // The last tab went: the window goes too, as in Chrome.
       CefRefPtr<CefWindow> w = window_;
       Post([w] { if (!w->IsClosed()) w->Close(); });
     }
   }
 
   void Fullscreen(CefRefPtr<CefBrowser> b, bool fs) {
-    if (!IsActive(TabFor(b)) || !window_) return;
+    Tab* t = TabFor(b);
+    if (!t || t->id != active_ || !window_) return;
     fullscreen_ = fs;
     CloseMenu();
-    ui_view_->SetVisible(!fs);
-    content_layout_ = content_->SetToBoxLayout(ContentLayout());
-    if (Tab* t = Find(active_)) content_layout_->SetFlexForView(t->view, 1);
-    for (auto& c : corners_) if (c) c->SetVisible(!fs);
+    ui_delegate_->height = UiHeight();
+    ui_view_->InvalidateLayout();
     if (window_->IsFullscreen() != fs) window_->SetFullscreen(fs);
     window_->Layout();
+    PlaceActive();
   }
 
   void PushState() {
@@ -480,13 +383,12 @@ class Win : public CefWindowDelegate {
     Tab* a = Find(active_);
     std::string s = "{\"tabs\":[";
     bool first = true;
-    for (int id : order_) {
-      Tab* t = Find(id);
-      if (!t || t->closing) continue;
+    for (auto& t : tabs_) {
+      if (t->closing) continue;
       if (!first) s += ",";
       first = false;
-      s += "{\"id\":" + std::to_string(id) + ",\"t\":" + Q(t->title) +
-           ",\"f\":" + Q(t->fav) + ",\"cur\":" + B(id == active_) + "}";
+      s += "{\"id\":" + std::to_string(t->id) + ",\"t\":" + Q(t->title) +
+           ",\"f\":" + Q(t->fav) + ",\"cur\":" + B(t->id == active_) + "}";
     }
     s += "]";
     if (a) {
@@ -499,22 +401,34 @@ class Win : public CefWindowDelegate {
     }
     s += ",\"fold\":" + std::string(B(fold_)) + ",\"menu\":" + B(menu_open_) +
          ",\"private\":" + B(private_) + "}";
-    Js(ui_view_, "window.ob&&ob.set(" + s + ")");
+    Js(ui_view_ ? ui_view_->GetBrowser() : nullptr, "window.ob&&ob.set(" + s + ")");
   }
 
-  // ---- from our own HTML
+  // ---- our own HTML
+
+  void UiCreated(CefRefPtr<CefBrowser> b) {
+    if (ui_view_ && ui_view_->GetBrowser() && ui_view_->GetBrowser()->IsSame(b)) return;
+    menu_ = b;  // the other UI browser is the menu
+    if (!menu_open_) x11::Show(b->GetHost()->GetWindowHandle(), false);
+    else PlaceMenu();
+  }
+
+  void UiClosed(CefRefPtr<CefBrowser> b) {
+    if (menu_ && menu_->IsSame(b)) menu_ = nullptr;
+  }
 
   void Command(CefRefPtr<CefDictionaryValue> d) {
     if (!window_) return;
     const std::string c = d->GetString("c").ToString();
     CefRefPtr<CefBrowser> b;
-    if (Tab* a = Find(active_)) b = a->view->GetBrowser();
+    if (Tab* a = Find(active_)) b = a->browser;
 
     if (c == "ready") { PushState(); return; }
     if (c == "menuready") { MenuState(); return; }
     if (c == "menusize") {
       menu_w_ = d->GetInt("w");
       menu_h_ = d->GetInt("h");
+      if (menu_open_) PlaceMenu();
       return;
     }
     if (c == "menu") { menu_open_ ? CloseMenu() : OpenMenu(); return; }
@@ -522,7 +436,7 @@ class Win : public CefWindowDelegate {
     if (c == "fold") { SetFold(!fold_); return; }
     if (c == "tab") { Activate(d->GetInt("id")); return; }
     if (c == "close") { CloseTab(d->GetInt("id")); return; }
-    if (c == "focuspage") { FocusPage(); return; }
+    if (c == "focuspage") { if (b) b->GetHost()->SetFocus(true); return; }
     if (c == "zoomin" || c == "zoomout") {
       if (b) b->GetHost()->Zoom(c == "zoomin" ? CEF_ZOOM_COMMAND_IN : CEF_ZOOM_COMMAND_OUT);
       CefRefPtr<Win> self(this);
@@ -532,13 +446,13 @@ class Win : public CefWindowDelegate {
 
     // Everything below closes the menu first.
     CloseMenu();
-    if (c == "newtab") NewTab(StartUrl(), true, false);
+    if (c == "newtab") NewTab(StartUrl(), true);
     else if (c == "newwindow") OpenWindow(false, StartUrl());
     else if (c == "private") OpenWindow(true, StartUrl());
-    else if (c == "history") NewTab("chrome://history", true, true);
-    else if (c == "bookmarks") NewTab("chrome://bookmarks", true, true);
-    else if (c == "downloads") NewTab("chrome://downloads", true, true);
-    else if (c == "settings") NewTab("chrome://settings", true, true);
+    else if (c == "history") NewTab("chrome://history", true);
+    else if (c == "bookmarks") NewTab("chrome://bookmarks", true);
+    else if (c == "downloads") NewTab("chrome://downloads", true);
+    else if (c == "settings") NewTab("chrome://settings", true);
     else if (!b) return;
     else if (c == "back") b->GoBack();
     else if (c == "fwd") b->GoForward();
@@ -547,14 +461,10 @@ class Win : public CefWindowDelegate {
     else if (c == "go") {
       const std::string u = d->GetString("url").ToString();
       if (!u.empty()) b->GetMainFrame()->LoadURL(u);
-      FocusPage();
+      b->GetHost()->SetFocus(true);
     } else if (c == "find") {
 #ifdef IDC_FIND
       b->GetHost()->ExecuteChromeCommand(IDC_FIND, CEF_WOD_CURRENT_TAB);
-#endif
-    } else if (c == "reader") {
-#ifdef IDC_SHOW_READING_MODE_SIDE_PANEL
-      b->GetHost()->ExecuteChromeCommand(IDC_SHOW_READING_MODE_SIDE_PANEL, CEF_WOD_CURRENT_TAB);
 #endif
     }
   }
@@ -572,22 +482,27 @@ class Win : public CefWindowDelegate {
       return true;
     };
     if (k == 0x1B && menu_open_) return run([](Win* w) { w->CloseMenu(); });
+    if (alt && !ctrl && (k == 0x25 || k == 0x27))  // Alt+Left, Alt+Right
+      return run([k](Win* w) {
+        if (Tab* a = w->Find(w->active_))
+          if (a->browser) k == 0x25 ? a->browser->GoBack() : a->browser->GoForward();
+      });
     if (!ctrl || alt) return false;
-    if (k == 'T' && !shift) return run([](Win* w) { w->NewTab(StartUrl(), true, false); });
+    if (k == 'T' && !shift) return run([](Win* w) { w->NewTab(StartUrl(), true); });
     if (k == 'T' && shift) return true;  // reopen closed tab: not built yet
-    if (k == 'N') return run([shift](Win* w) { w->OpenWindow(shift, StartUrl()); });
+    if (k == 'N') return run([shift](Win* w) { OpenWindow(shift, StartUrl()); });
     if (k == 'W' && !shift) return run([](Win* w) { w->CloseTab(w->active_); });
     if (k == 'L') return run([](Win* w) { w->FocusAddress(); });
-    if (k == 'H' && !shift) return run([](Win* w) { w->NewTab("chrome://history", true, true); });
-    if (k == 'J' && !shift) return run([](Win* w) { w->NewTab("chrome://downloads", true, true); });
+    if (k == 'H' && !shift) return run([](Win* w) { w->NewTab("chrome://history", true); });
+    if (k == 'J' && !shift) return run([](Win* w) { w->NewTab("chrome://downloads", true); });
     if (k == 'D') return true;  // Chrome's bookmark bubble needs Chrome's toolbar
     if (k == 0x09) return run([shift](Win* w) { w->Cycle(shift ? -1 : 1); });
     if (k >= '1' && k <= '9' && !shift) {
       const int n = k - '1';
       return run([n](Win* w) {
-        if (w->order_.empty()) return;
-        w->Activate(n == 8 || n >= static_cast<int>(w->order_.size()) ? w->order_.back()
-                                                                      : w->order_[n]);
+        std::vector<int> open = w->OpenIds();
+        if (open.empty()) return;
+        w->Activate(n == 8 || n >= static_cast<int>(open.size()) ? open.back() : open[n]);
       });
     }
     return false;
@@ -595,25 +510,35 @@ class Win : public CefWindowDelegate {
 
  private:
   Tab* Find(int id) {
-    auto it = tabs_.find(id);
-    return it == tabs_.end() ? nullptr : it->second.get();
+    for (auto& t : tabs_)
+      if (t->id == id) return t.get();
+    return nullptr;
   }
 
-  int Neighbour(int id) {
-    auto it = std::find(order_.begin(), order_.end(), id);
-    if (it == order_.end()) return 0;
-    for (auto r = it + 1; r != order_.end(); ++r)
-      if (!Find(*r)->closing) return *r;
-    for (auto l = it; l != order_.begin();) {
+  std::vector<int> OpenIds() {
+    std::vector<int> v;
+    for (auto& t : tabs_)
+      if (!t->closing && t->browser) v.push_back(t->id);
+    return v;
+  }
+
+  void ActivateNeighbour(int id) {
+    std::vector<int> all;
+    for (auto& t : tabs_) all.push_back(t->id);
+    auto it = std::find(all.begin(), all.end(), id);
+    active_ = 0;
+    if (it == all.end()) return;
+    auto ok = [this](int x) { Tab* t = Find(x); return t && !t->closing && t->browser; };
+    for (auto r = it + 1; r != all.end(); ++r)
+      if (ok(*r)) { Activate(*r); return; }
+    for (auto l = it; l != all.begin();) {
       --l;
-      if (!Find(*l)->closing) return *l;
+      if (ok(*l)) { Activate(*l); return; }
     }
-    return 0;
   }
 
   void Cycle(int dir) {
-    std::vector<int> open;
-    for (int id : order_) if (!Find(id)->closing) open.push_back(id);
+    std::vector<int> open = OpenIds();
     if (open.size() < 2) return;
     auto it = std::find(open.begin(), open.end(), active_);
     int i = it == open.end() ? 0 : static_cast<int>(it - open.begin());
@@ -621,54 +546,83 @@ class Win : public CefWindowDelegate {
     Activate(open[i]);
   }
 
-  void MoveToHolder(Tab* t) {
-    content_->RemoveChildView(t->view);
-    t->holder->AddChildView(t->view);
-  }
-
-  CefBoxLayoutSettings ContentLayout() {
-    CefBoxLayoutSettings c;
-    c.horizontal = true;
-    const int i = fullscreen_ ? 0 : kInset;
-    c.inside_border_insets = {0, i, i, i};
-    return c;
+  float Scale() {
+    auto d = window_ ? window_->GetDisplay() : nullptr;
+    return d ? d->GetDeviceScaleFactor() : 1.0f;
   }
 
   int UiHeight() const { return fullscreen_ ? 0 : kNavH + (fold_ ? kStripH : 0); }
+
+  // The page box in pixels, relative to the main window.
+  CefRect PageRectPx() {
+    if (!window_ || !content_) return CefRect(0, 0, 800, 600);
+    const CefRect c = content_->GetBounds();
+    const int i = fullscreen_ ? 0 : kInset;
+    const float s = Scale();
+    const int x = static_cast<int>(std::lround((c.x + i) * s));
+    const int y = static_cast<int>(std::lround(c.y * s));
+    const int w = static_cast<int>(std::lround((c.width - 2 * i) * s));
+    const int h = static_cast<int>(std::lround((c.height - i) * s));
+    return CefRect(x, y, std::max(w, 1), std::max(h, 1));
+  }
+
+  void PlaceActive() {
+    Tab* t = Find(active_);
+    if (!t || !t->browser) return;
+    const CefRect r = PageRectPx();
+    x11::Place(t->xid(), r.x, r.y, r.width, r.height);
+    const int radius = Flag("square-corners") || fullscreen_
+                           ? 0 : static_cast<int>(std::lround(kRadius * Scale()));
+    x11::Round(t->xid(), r.width, r.height, radius);
+  }
 
   void SetFold(bool open) {
     fold_ = open;
     ui_delegate_->height = UiHeight();
     ui_view_->InvalidateLayout();
     window_->Layout();
+    PlaceActive();
     PushState();
   }
 
-  void PlaceCorners(const CefRect& r) {
-    if (!corners_[0]) return;
-    const int x = r.x + kInset, y = r.y;
-    const int w = r.width - 2 * kInset, h = r.height - kInset;
-    const CefRect at[4] = {{x, y, kRadius, kRadius},
-                           {x + w - kRadius, y, kRadius, kRadius},
-                           {x, y + h - kRadius, kRadius, kRadius},
-                           {x + w - kRadius, y + h - kRadius, kRadius, kRadius}};
-    for (int i = 0; i < 4; ++i) {
-      corners_[i]->SetBounds(at[i]);
-      corners_[i]->SetVisible(!fullscreen_ && w > 2 * kRadius && h > 2 * kRadius);
-    }
+  CefRect MenuRectPx() {
+    const float s = Scale();
+    const int w = menu_w_ > 0 ? menu_w_ : kMenuW, h = menu_h_ > 0 ? menu_h_ : kMenuH;
+    const int ww = ui_view_->GetBounds().width;
+    return CefRect(static_cast<int>(std::lround((ww - 10 - w) * s)),
+                   static_cast<int>(std::lround((UiHeight() + 2) * s)),
+                   static_cast<int>(std::lround(w * s)), static_cast<int>(std::lround(h * s)));
+  }
+
+  void PlaceMenu() {
+    if (!menu_) return;
+    const unsigned long x = menu_->GetHost()->GetWindowHandle();
+    const CefRect r = MenuRectPx();
+    x11::Place(x, r.x, r.y, r.width, r.height);
+    x11::Show(x, true);
+    menu_->GetHost()->SetFocus(true);
   }
 
   void OpenMenu() {
     // A click on ⋯ while the menu is open first closes it (it loses focus),
     // so a second open within a moment is that same click.
     if (NowMs() - menu_closed_at_ < 300) return;
-    const int w = menu_w_ > 0 ? menu_w_ : 294, h = menu_h_ > 0 ? menu_h_ : 400;
-    const int ww = ui_view_->GetBounds().width;
-    menu_->SetBounds(CefRect(ww - 10 - w, UiHeight() + 2, w, h));
-    menu_->SetVisible(true);
     menu_open_ = true;
-    MenuState();
-    menu_view_->RequestFocus();
+    if (!menu_) {
+      if (!menu_requested_) {
+        menu_requested_ = true;
+        CefWindowInfo info;
+        info.SetAsChild(window_->GetWindowHandle(), MenuRectPx());
+        info.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
+        CefBrowserSettings ms;
+        ms.background_color = kMenu;
+        CefBrowserHost::CreateBrowser(info, ui_client_, UiUrl("menu.html"), ms, nullptr,
+                                      nullptr);
+      }
+    } else {
+      PlaceMenu();
+      MenuState();
+    }
     PushState();
   }
 
@@ -676,40 +630,30 @@ class Win : public CefWindowDelegate {
     if (!menu_open_) return;
     menu_open_ = false;
     menu_closed_at_ = NowMs();
-    if (menu_) menu_->SetVisible(false);
-    FocusPage();
+    if (menu_) x11::Show(menu_->GetHost()->GetWindowHandle(), false);
+    if (Tab* a = Find(active_))
+      if (a->browser) a->browser->GetHost()->SetFocus(true);
     PushState();
   }
 
   void MenuState() {
     int pct = 100;
-    if (Tab* a = Find(active_)) {
-      if (auto b = a->view->GetBrowser())
-        pct = static_cast<int>(std::lround(std::pow(1.2, b->GetHost()->GetZoomLevel()) * 100));
-    }
-    Js(menu_view_, "window.ob&&ob.set({\"zoom\":" + std::to_string(pct) + "})");
-  }
-
-  void FocusPage() {
-    if (Tab* a = Find(active_)) a->view->RequestFocus();
+    if (Tab* a = Find(active_))
+      if (a->browser)
+        pct = static_cast<int>(std::lround(std::pow(1.2, a->browser->GetHost()->GetZoomLevel()) * 100));
+    Js(menu_, "window.ob&&ob.set({\"zoom\":" + std::to_string(pct) + "})");
   }
 
   void FocusAddress() {
+    if (!ui_view_) return;
     ui_view_->RequestFocus();
-    Js(ui_view_, "window.ob&&ob.focusAddress()");
+    Js(ui_view_->GetBrowser(), "window.ob&&ob.focusAddress()");
   }
 
-  static void Js(CefRefPtr<CefBrowserView> v, const std::string& code) {
-    if (!v) return;
-    if (auto b = v->GetBrowser()) b->GetMainFrame()->ExecuteJavaScript(code, "", 0);
+  static void Js(CefRefPtr<CefBrowser> b, const std::string& code) {
+    if (b) b->GetMainFrame()->ExecuteJavaScript(code, "", 0);
   }
 
- public:
-  static void OpenWindow(bool priv, const std::string& url) {
-    CefWindow::CreateTopLevelWindow(new Win(priv, url));
-  }
-
- private:
   bool private_;
   std::string first_;
   CefRefPtr<CefRequestContext> context_;
@@ -717,17 +661,17 @@ class Win : public CefWindowDelegate {
   CefRefPtr<UiClient> ui_client_;
   CefRefPtr<UiDelegate> ui_delegate_;
   CefRefPtr<CefWindow> window_;
-  CefRefPtr<CefBrowserView> ui_view_, menu_view_;
+  CefRefPtr<CefBrowserView> ui_view_;
+  CefRefPtr<CefBrowser> menu_;
   CefRefPtr<CefPanel> content_;
-  CefRefPtr<CefBoxLayout> content_layout_;
-  CefRefPtr<CefOverlayController> corners_[4];
-  CefRefPtr<CefOverlayController> menu_;
-  std::map<int, std::unique_ptr<Tab>> tabs_;
-  std::vector<int> order_;
+  std::vector<std::unique_ptr<Tab>> tabs_;
+  struct Pending { int id; bool activate; };
+  std::deque<Pending> pending_;
   int next_id_ = 0, active_ = 0;
   int menu_w_ = 0, menu_h_ = 0;
   int64_t menu_closed_at_ = 0;
-  bool fold_ = false, menu_open_ = false, fullscreen_ = false, closing_all_ = false;
+  bool fold_ = false, menu_open_ = false, menu_requested_ = false;
+  bool fullscreen_ = false, closing_all_ = false;
   IMPLEMENT_REFCOUNTING(Win);
 };
 
@@ -735,10 +679,7 @@ class Win : public CefWindowDelegate {
 
 void PageClient::OnAfterCreated(CefRefPtr<CefBrowser> b) {
   ++g_browsers;
-  if (win_) win_->TabFor(b);  // records the browser id
-}
-bool PageClient::DoClose(CefRefPtr<CefBrowser> b) {
-  return win_ ? win_->PageWantsClose(b) : false;
+  if (win_ && !b->IsPopup()) win_->TabCreated(b);
 }
 void PageClient::OnBeforeClose(CefRefPtr<CefBrowser> b) {
   if (win_) win_->PageClosed(b);
@@ -763,7 +704,7 @@ bool PageClient::OnBeforePopup(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame>, int,
     case CEF_WOD_SINGLETON_TAB:
     case CEF_WOD_SWITCH_TO_TAB: {
       const bool fg = d != CEF_WOD_NEW_BACKGROUND_TAB;
-      Post([w, url, fg] { w->NewTab(url, fg, true); });
+      Post([w, url, fg] { w->NewTab(url, fg); });
       return true;
     }
     case CEF_WOD_OFF_THE_RECORD:
@@ -791,7 +732,9 @@ void PageClient::OnFaviconURLChange(CefRefPtr<CefBrowser> b,
   }
 }
 void PageClient::OnFullscreenModeChange(CefRefPtr<CefBrowser> b, bool fs) {
-  if (win_) win_->Fullscreen(b, fs);
+  if (!win_) return;
+  CefRefPtr<Win> w(win_);
+  Post([w, b, fs] { w->Fullscreen(b, fs); });
 }
 void PageClient::OnLoadingStateChange(CefRefPtr<CefBrowser> b, bool loading,
                                       bool back, bool fwd) {
@@ -806,6 +749,15 @@ bool PageClient::OnPreKeyEvent(CefRefPtr<CefBrowser> b, const CefKeyEvent& e,
   return win_ && win_->TabFor(b) ? win_->Key(e) : false;
 }
 
+void UiClient::OnAfterCreated(CefRefPtr<CefBrowser> b) {
+  ++g_browsers;
+  if (win_) win_->UiCreated(b);
+}
+void UiClient::OnBeforeClose(CefRefPtr<CefBrowser> b) {
+  if (win_) win_->UiClosed(b);
+  --g_browsers;
+  MaybeQuit();
+}
 bool UiClient::OnConsoleMessage(CefRefPtr<CefBrowser>, cef_log_severity_t,
                                 const CefString& message, const CefString& source,
                                 int) {
@@ -837,6 +789,15 @@ std::string ExeDir() {
 class App : public CefApp, public CefBrowserProcessHandler {
  public:
   CefRefPtr<CefBrowserProcessHandler> GetBrowserProcessHandler() override { return this; }
+
+  // Tabs are embedded as X11 child windows, which Wayland does not offer, so
+  // the browser runs on X11 (XWayland on a Wayland desktop).
+  void OnBeforeCommandLineProcessing(const CefString& process_type,
+                                     CefRefPtr<CefCommandLine> cl) override {
+    if (process_type.empty() && !cl->HasSwitch("ozone-platform"))
+      cl->AppendSwitchWithValue("ozone-platform", "x11");
+  }
+
   void OnContextInitialized() override {
     auto cl = CefCommandLine::GetGlobalCommandLine();
     g_ui = cl->GetSwitchValue("ui-dir").ToString();

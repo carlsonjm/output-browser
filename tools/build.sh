@@ -1,7 +1,7 @@
 #!/bin/bash
 # Builds Output Browser against a CEF binary distribution.
 #   CEF=/path/to/cef_binary_... bash tools/build.sh [output folder]
-# Needs cmake, make or ninja, and g++. The output folder defaults to ./out.
+# Needs cmake, make or ninja, g++, and the Xlib and Xext headers. The output folder defaults to ./out.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 : "${CEF:?Set CEF to the folder of a CEF binary distribution}"
@@ -15,6 +15,6 @@ mkdir -p "$OUT"
 cp -r "$CEF"/Release/* "$CEF"/Resources/* "$OUT"/
 rm -rf "$OUT/ui"
 cp -r "$ROOT/ui" "$OUT/ui"
-g++ -std=c++20 -O2 -DNDEBUG -fno-stack-protector -I"$CEF" "$ROOT"/src/*.cc "$WRAP" \
+g++ -std=c++20 -O2 -DNDEBUG -fno-stack-protector -I"$CEF" "$ROOT"/src/*.cc "$WRAP" -lX11 -lXext \
     -L"$CEF/Release" -lcef -Wl,-rpath,'$ORIGIN' -lpthread -ldl -o "$OUT/output-browser"
 echo "built: $OUT/output-browser"

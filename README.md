@@ -14,9 +14,11 @@ Chromium draws the web pages.
   send their commands to `main.cc` as console lines that start with `ob:`.
 - `ui/start.html` is the page a new tab opens on.
 
-CEF allows one Chrome-style browser per window, and only while the window
-holds no other browser. So each tab is created in a hidden window of its own,
-and the tab that is showing is moved into the main window.
+A CEF window can hold only one Chrome-style page, and a page cannot move to
+another window. So the main window holds only the row, and each tab is a
+Chrome-style browser embedded in it as an X11 child window (`src/x11.cc`):
+the tab that is showing sits over the page box and the others are hidden.
+The browser therefore runs on X11, through XWayland on a Wayland desktop.
 
 ## Building the browser
 
