@@ -12,7 +12,14 @@ Chromium draws the web pages.
 - `ui/bar.html` is the top row and the tab strip that folds down under it.
   `ui/menu.html` is the menu. Both are drawn in small Alloy-style browsers and
   send their commands to `main.cc` as console lines that start with `ob:`.
-- `ui/start.html` is the page a new tab opens on.
+- `ui/start.html` is the page a new tab opens on, with the bookmarks under
+  its search box.
+- Extensions are Chrome's own, installed from the Chrome Web Store. The browser
+  reads which are installed from the profile, shows up to two in the address
+  bar and the rest in the extensions list, and opens an extension's pop-over
+  as a Chrome-style page laid over the top of the page box.
+- Bookmarks and the extensions shown in the address bar are kept in
+  `output-browser.json` in the profile folder.
 
 A CEF window can hold only one Chrome-style page, and a page cannot move to
 another window. So the main window holds only the row, and each tab is a

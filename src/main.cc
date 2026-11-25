@@ -10,6 +10,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <climits>
 #include <cmath>
@@ -17,6 +18,7 @@
 #include <deque>
 #include <fstream>
 #include <functional>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <vector>
@@ -138,6 +140,247 @@ int64_t NowMs() {
              std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
+// ---------------------------------------------------------------- files
+
+std::string g_root;  // the profile folder, ~/.local/share/output-browser
+
+std::string ReadFile(const std::string& p) {
+  std::ifstream f(p, std::ios::binary);
+  if (!f) return "";
+  return std::string(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+}
+CefRefPtr<CefDictionaryValue> ReadJsonDict(const std::string& p) {
+  const std::string s = ReadFile(p);
+  if (s.empty()) return nullptr;
+  auto v = CefParseJSON(s, JSON_PARSER_ALLOW_TRAILING_COMMAS);
+  return v && v->GetType() == VTYPE_DICTIONARY ? v->GetDictionary() : nullptr;
+}
+CefRefPtr<CefDictionaryValue> Dict(CefRefPtr<CefDictionaryValue> d, const std::string& k) {
+  return d && d->GetType(k) == VTYPE_DICTIONARY ? d->GetDictionary(k) : nullptr;
+}
+std::string Str(CefRefPtr<CefDictionaryValue> d, const std::string& k) {
+  return d && d->GetType(k) == VTYPE_STRING ? d->GetString(k).ToString() : "";
+}
+std::string Lower(std::string s) {
+  for (auto& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  return s;
+}
+
+// ---------------------------------------------------------------- extensions
+//
+// Extensions are Chrome's own: installed from the Chrome Web Store into the
+// profile, and run by Chrome. We only read what is installed, to show each
+// one in the address bar and open its pop-over.
+
+struct Ext { std::string id, name, popup, icon; };
+
+// An extension's name can be a message from its translations.
+std::string Localize(const std::string& dir, CefRefPtr<CefDictionaryValue> man,
+                     const std::string& s) {
+  if (s.rfind("__MSG_", 0) != 0 || s.size() < 9) return s;
+  const std::string key = Lower(s.substr(6, s.size() - 8));
+  for (const std::string& loc : {std::string("en_US"), std::string("en"), Str(man, "default_locale")}) {
+    if (loc.empty()) continue;
+    auto m = ReadJsonDict(dir + "/_locales/" + loc + "/messages.json");
+    if (!m) continue;
+    CefDictionaryValue::KeyList keys;
+    m->GetKeys(keys);
+    for (auto& k : keys) {
+      const std::string ks = k.ToString();
+      if (Lower(ks) != key) continue;
+      const std::string msg = Str(Dict(m, ks), "message");
+      if (!msg.empty()) return msg;
+    }
+  }
+  return s.substr(6, s.size() - 8);
+}
+
+// The icon closest to 32 px, from a path or a {size: path} list.
+std::string PickIcon(CefRefPtr<CefValue> v) {
+  if (!v) return "";
+  if (v->GetType() == VTYPE_STRING) return v->GetString().ToString();
+  if (v->GetType() != VTYPE_DICTIONARY) return "";
+  auto d = v->GetDictionary();
+  CefDictionaryValue::KeyList keys;
+  d->GetKeys(keys);
+  std::string best;
+  int best_size = 0;
+  for (auto& k : keys) {
+    const int size = atoi(k.ToString().c_str());
+    const std::string path = Str(d, k.ToString());
+    if (path.empty()) continue;
+    const bool better = best.empty() ||
+                        (size >= 32 && (best_size < 32 || size < best_size)) ||
+                        (size < 32 && best_size < 32 && size > best_size);
+    if (better) { best = path; best_size = size; }
+  }
+  return best;
+}
+
+bool Disabled(CefRefPtr<CefDictionaryValue> s) {
+  if (s->GetType("disable_reasons") == VTYPE_LIST && s->GetList("disable_reasons")->GetSize() > 0)
+    return true;
+  if (s->GetType("disable_reasons") == VTYPE_INT && s->GetInt("disable_reasons") != 0) return true;
+  if (s->GetType("state") == VTYPE_INT && s->GetInt("state") == 0) return true;
+  return false;
+}
+
+std::vector<Ext> ScanExtensions() {
+  std::vector<Ext> out;
+  const std::string prof = g_root + "/default";
+  for (const char* file : {"/Secure Preferences", "/Preferences"}) {
+    auto settings = Dict(Dict(ReadJsonDict(prof + file), "extensions"), "settings");
+    if (!settings) continue;
+    CefDictionaryValue::KeyList ids;
+    settings->GetKeys(ids);
+    for (auto& idv : ids) {
+      const std::string id = idv.ToString();
+      if (std::any_of(out.begin(), out.end(), [&id](const Ext& e) { return e.id == id; })) continue;
+      auto st = Dict(settings, id);
+      if (!st || Disabled(st)) continue;
+      const int loc = st->GetType("location") == VTYPE_INT ? st->GetInt("location") : 0;
+      if (loc == 5 || loc == 10) continue;  // built into the browser
+      const std::string path = Str(st, "path");
+      if (path.empty()) continue;
+      const std::string dir = path[0] == '/' ? path : prof + "/Extensions/" + path;
+      auto man = ReadJsonDict(dir + "/manifest.json");
+      if (!man || man->HasKey("theme") || man->HasKey("app")) continue;
+      Ext e;
+      e.id = id;
+      e.name = Localize(dir, man, Str(man, "name"));
+      auto act = Dict(man, "action");
+      if (!act) act = Dict(man, "browser_action");
+      if (!act) act = Dict(man, "page_action");
+      e.popup = Str(act, "default_popup");
+      while (!e.popup.empty() && e.popup[0] == '/') e.popup.erase(0, 1);
+      std::string icon = act ? PickIcon(act->GetValue("default_icon")) : "";
+      if (icon.empty()) icon = PickIcon(man->GetValue("icons"));
+      while (!icon.empty() && icon[0] == '/') icon.erase(0, 1);
+      if (!icon.empty()) e.icon = "file://" + dir + "/" + icon;
+      out.push_back(e);
+    }
+  }
+  std::sort(out.begin(), out.end(),
+            [](const Ext& a, const Ext& b) { return Lower(a.name) < Lower(b.name); });
+  return out;
+}
+
+// ---------------------------------------------------------------- our own settings
+//
+// Kept in output-browser.json in the profile folder: which extensions are
+// shown in the address bar (up to two) and the bookmarks on the start page.
+
+struct Bookmark { std::string u, t; };
+struct Store {
+  std::vector<std::string> shown;
+  bool shown_set = false;  // until the person picks, the first two are shown
+  std::vector<Bookmark> bookmarks;
+} g_store;
+
+std::string StorePath() { return g_root + "/output-browser.json"; }
+
+void LoadStore() {
+  auto d = ReadJsonDict(StorePath());
+  bool have_bookmarks = false;
+  if (d && d->GetType("shown") == VTYPE_LIST) {
+    g_store.shown_set = true;
+    auto l = d->GetList("shown");
+    for (size_t i = 0; i < l->GetSize(); ++i)
+      if (l->GetType(i) == VTYPE_STRING) g_store.shown.push_back(l->GetString(i).ToString());
+  }
+  if (d && d->GetType("bookmarks") == VTYPE_LIST) {
+    have_bookmarks = true;
+    auto l = d->GetList("bookmarks");
+    for (size_t i = 0; i < l->GetSize(); ++i) {
+      if (l->GetType(i) != VTYPE_DICTIONARY) continue;
+      auto e = l->GetDictionary(i);
+      if (!Str(e, "u").empty()) g_store.bookmarks.push_back({Str(e, "u"), Str(e, "t")});
+    }
+  }
+  if (!have_bookmarks)
+    g_store.bookmarks = {{"https://mail.google.com/", "Mail"},
+                         {"https://www.youtube.com/", "YouTube"},
+                         {"https://weather.com/", "Weather"},
+                         {"https://www.netflix.com/", "Netflix"},
+                         {"https://docs.google.com/", "Docs"}};
+}
+
+std::string BookmarksJson() {
+  std::string s = "[";
+  for (size_t i = 0; i < g_store.bookmarks.size(); ++i)
+    s += std::string(i ? "," : "") + "{\"u\":" + Q(g_store.bookmarks[i].u) +
+         ",\"t\":" + Q(g_store.bookmarks[i].t) + "}";
+  return s + "]";
+}
+
+void SaveStore() {
+  std::string s = "{";
+  if (g_store.shown_set) {
+    s += "\"shown\":[";
+    for (size_t i = 0; i < g_store.shown.size(); ++i) s += (i ? "," : "") + Q(g_store.shown[i]);
+    s += "],";
+  }
+  s += "\"bookmarks\":" + BookmarksJson() + "}\n";
+  const std::string tmp = StorePath() + ".new";
+  {
+    std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
+    if (!f) return;
+    f << s;
+  }
+  rename(tmp.c_str(), StorePath().c_str());
+}
+
+bool Bookmarked(const std::string& u) {
+  return std::any_of(g_store.bookmarks.begin(), g_store.bookmarks.end(),
+                     [&u](const Bookmark& b) { return b.u == u; });
+}
+
+// The extensions shown in the address bar: the person's picks, else the first two.
+std::vector<std::string> ShownIds(const std::vector<Ext>& exts) {
+  std::vector<std::string> v;
+  if (g_store.shown_set) {
+    for (auto& id : g_store.shown)
+      if (std::any_of(exts.begin(), exts.end(), [&id](const Ext& e) { return e.id == id; }))
+        v.push_back(id);
+  } else {
+    for (auto& e : exts) v.push_back(e.id);
+  }
+  if (v.size() > 2) v.resize(2);
+  return v;
+}
+
+std::string ExtsJson(const std::vector<Ext>& exts) {
+  const auto shown = ShownIds(exts);
+  std::string s = "[";
+  for (size_t i = 0; i < exts.size(); ++i) {
+    const auto& e = exts[i];
+    const bool on = std::find(shown.begin(), shown.end(), e.id) != shown.end();
+    s += std::string(i ? "," : "") + "{\"id\":" + Q(e.id) + ",\"n\":" + Q(e.name) +
+         ",\"i\":" + Q(e.icon) + ",\"p\":" + B(!e.popup.empty()) + ",\"s\":" + B(on) + "}";
+  }
+  return s + "]";
+}
+
+std::string HostName(const std::string& url);
+
+// A short name for a bookmark: the page title up to its first separator.
+std::string ShortTitle(const std::string& title, const std::string& url) {
+  std::string t = title;
+  for (const char* sep : {" - ", " | ", " \xE2\x80\x93 ", " \xE2\x80\x94 ", " \xC2\xB7 "}) {
+    auto p = t.find(sep);
+    if (p != std::string::npos && p > 0) t = t.substr(0, p);
+  }
+  if (!t.empty() && t != url) return t;
+  return HostName(url);
+}
+
+std::string HostName(const std::string& url) {
+  CefURLParts parts;
+  std::string host = CefParseURL(url, parts) ? CefString(&parts.host).ToString() : url;
+  if (host.rfind("www.", 0) == 0) host = host.substr(4);
+  return host;
+}
+
 class UiDelegate : public CefBrowserViewDelegate {
  public:
   int height = kNavH;
@@ -160,7 +403,8 @@ struct Tab {
 
 class PageClient : public CefClient, public CefLifeSpanHandler,
                    public CefDisplayHandler, public CefLoadHandler,
-                   public CefKeyboardHandler, public CefDownloadHandler {
+                   public CefKeyboardHandler, public CefDownloadHandler,
+                   public CefFocusHandler {
  public:
   explicit PageClient(Win* w) : win_(w) {}
   void Detach() { win_ = nullptr; }
@@ -169,7 +413,12 @@ class PageClient : public CefClient, public CefLifeSpanHandler,
   CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
   CefRefPtr<CefKeyboardHandler> GetKeyboardHandler() override { return this; }
   CefRefPtr<CefDownloadHandler> GetDownloadHandler() override { return this; }
+  CefRefPtr<CefFocusHandler> GetFocusHandler() override { return this; }
 
+  void OnGotFocus(CefRefPtr<CefBrowser> b) override;
+  bool OnConsoleMessage(CefRefPtr<CefBrowser> b, cef_log_severity_t,
+                        const CefString& message, const CefString& source,
+                        int) override;
   void OnAfterCreated(CefRefPtr<CefBrowser> b) override;
   void OnBeforeClose(CefRefPtr<CefBrowser> b) override;
   bool OnBeforePopup(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame>, int,
@@ -226,11 +475,54 @@ class UiClient : public CefClient, public CefLifeSpanHandler,
   IMPLEMENT_REFCOUNTING(UiClient);
 };
 
+// Client for an extension's pop-over: a Chrome-style page laid over the top
+// of the page box, under the address bar, like a menu.
+class PopClient : public CefClient, public CefLifeSpanHandler,
+                  public CefDisplayHandler, public CefLoadHandler,
+                  public CefKeyboardHandler {
+ public:
+  explicit PopClient(Win* w) : win_(w) {}
+  void Detach() { win_ = nullptr; }
+  CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
+  CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
+  CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
+  CefRefPtr<CefKeyboardHandler> GetKeyboardHandler() override { return this; }
+  void OnAfterCreated(CefRefPtr<CefBrowser> b) override;
+  void OnBeforeClose(CefRefPtr<CefBrowser> b) override;
+  bool OnBeforePopup(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame>, int,
+                     const CefString& target_url, const CefString&,
+                     WindowOpenDisposition disposition, bool,
+                     const CefPopupFeatures&, CefWindowInfo&,
+                     CefRefPtr<CefClient>&, CefBrowserSettings&,
+                     CefRefPtr<CefDictionaryValue>&, bool*) override;
+  bool OnConsoleMessage(CefRefPtr<CefBrowser> b, cef_log_severity_t,
+                        const CefString& message, const CefString&, int) override;
+  void OnLoadingStateChange(CefRefPtr<CefBrowser> b, bool loading, bool, bool) override;
+  bool OnPreKeyEvent(CefRefPtr<CefBrowser>, const CefKeyEvent& e,
+                     CefEventHandle, bool*) override;
+ private:
+  Win* win_;
+  IMPLEMENT_REFCOUNTING(PopClient);
+};
+
+// Measures the pop-over's page and reports its size, as Chrome sizes
+// extension pop-overs to their content.
+const char kMeasure[] =
+    "(()=>{if(window.__obm)return;window.__obm=1;const r=()=>{const b=document.body,"
+    "d=document.documentElement;if(!b)return;const cs=getComputedStyle(b);"
+    "const w=Math.ceil(b.getBoundingClientRect().width+parseFloat(cs.marginLeft||0)+"
+    "parseFloat(cs.marginRight||0));const h=Math.ceil(Math.max(d.scrollHeight,b.scrollHeight));"
+    "console.log('obpop:'+w+'x'+h)};if(document.body)new ResizeObserver(r).observe(document.body);"
+    "r()})()";
+
+std::vector<Win*> g_wins;
+
 class Win : public CefWindowDelegate {
  public:
   Win(bool priv, std::string first) : private_(priv), first_(std::move(first)) {
     page_client_ = new PageClient(this);
     ui_client_ = new UiClient(this);
+    pop_client_ = new PopClient(this);
     ui_delegate_ = new UiDelegate;
     if (private_) {
       CefRequestContextSettings s;  // no cache path: kept in memory only
@@ -270,6 +562,7 @@ class Win : public CefWindowDelegate {
   void OnWindowCreated(CefRefPtr<CefWindow> w) override {
     window_ = w;
     ++g_windows;
+    g_wins.push_back(this);
     w->SetTitle(private_ ? "Output Browser (private)" : "Output Browser");
     w->SetBackgroundColor(kChrome);
     CefBoxLayoutSettings v;
@@ -294,11 +587,15 @@ class Win : public CefWindowDelegate {
     // The first tab waits until the new window is on screen at its real size.
     // A tab embedded while the window is still being mapped never paints.
     Post([self, first] { self->NewTab(first, true); }, 400);
+    if (!private_) ScanTick();
   }
 
   void OnWindowDestroyed(CefRefPtr<CefWindow>) override {
     page_client_->Detach();
     ui_client_->Detach();
+    pop_client_->Detach();
+    g_wins.erase(std::remove(g_wins.begin(), g_wins.end(), this), g_wins.end());
+    pop_ = nullptr;
     ui_view_ = nullptr;
     content_ = nullptr;
     window_ = nullptr;
@@ -315,6 +612,7 @@ class Win : public CefWindowDelegate {
   bool CanClose(CefRefPtr<CefWindow>) override {
     closing_all_ = true;
     CloseMenu();
+    ClosePop();
     for (auto& t : tabs_) {
       if (!t->closing && t->browser) {
         t->closing = true;
@@ -335,12 +633,14 @@ class Win : public CefWindowDelegate {
       PushState();
     }
     if (menu_open_) CloseMenu();
+    ClosePop();
   }
 
   void OnLayoutChanged(CefRefPtr<CefView> v, const CefRect&) override {
     if (!content_ || !v || !v->IsSame(content_)) return;
     PlaceActive();
     if (menu_open_) CloseMenu();
+    ClosePop();
   }
 
   // ---- tabs
@@ -421,6 +721,7 @@ class Win : public CefWindowDelegate {
       self->PlaceActive();
       if (Tab* tt = self->Find(id)) Log("tab " + std::to_string(id) + " now: " + x11::Describe(tt->xid()));
     }, 300);
+    ClosePop();
     t->browser->GetHost()->SetFocus(true);
     if (menu_open_) CloseMenu();
     PushState();
@@ -491,7 +792,12 @@ class Win : public CefWindowDelegate {
       if (private_) title += " (private)";
       window_->SetTitle(title);
     }
-    s += ",\"fold\":" + std::string(B(fold_)) + ",\"menu\":" + B(menu_open_) +
+    if (a)
+      s += ",\"marked\":" + std::string(B(Bookmarked(a->url))) +
+           ",\"markable\":" + B(!IsStart(a->url) && !a->url.empty());
+    s += ",\"exts\":" + (private_ ? std::string("[]") : ExtsJson(exts_)) +
+         ",\"pop\":" + Q(pop_id_) + ",\"extmenu\":" + B(menu_open_ && menu_mode_ == "ext");
+    s += ",\"fold\":" + std::string(B(fold_)) + ",\"menu\":" + B(menu_open_ && menu_mode_ == "main") +
          ",\"private\":" + B(private_) + ",\"max\":" + B(maximized_);
     if (IsFrameless(window_)) s += ",\"wl\":" + Q(sides_.left) + ",\"wr\":" + Q(sides_.right);
     s += "}";
@@ -517,7 +823,26 @@ class Win : public CefWindowDelegate {
     CefRefPtr<CefBrowser> b;
     if (Tab* a = Find(active_)) b = a->browser;
 
+    // Any other click in our row or menu closes an open pop-over.
+    if (c != "ready" && c != "menuready" && c != "menusize" && c != "menuclose" &&
+        c != "extpop" && c != "extshow")
+      ClosePop();
     if (c == "ready") { sides_ = ReadButtonSides(); PushState(); return; }
+    if (c == "dismiss") return;
+    if (c == "star") { ToggleStar(); return; }
+    if (c == "extshow") { ShowExt(d->GetString("id").ToString(), d->GetBool("on")); return; }
+    if (c == "extpop") {
+      const std::string id = d->GetString("id").ToString();
+      if (id == pop_id_) { ClosePop(); return; }
+      const double r = d->HasKey("r") ? d->GetDouble("r") : menu_r_;
+      OpenPop(id, r);
+      return;
+    }
+    if (c == "extmenu") {
+      menu_r_ = d->GetDouble("r");
+      menu_open_ && menu_mode_ == "ext" ? CloseMenu() : OpenMenu("ext");
+      return;
+    }
     if (c == "winmin") { window_->Minimize(); return; }
     if (c == "winmax") { ToggleMax(); return; }
     if (c == "winclose") { window_->Close(); return; }
@@ -528,7 +853,7 @@ class Win : public CefWindowDelegate {
       if (menu_open_) PlaceMenu();
       return;
     }
-    if (c == "menu") { menu_open_ ? CloseMenu() : OpenMenu(); return; }
+    if (c == "menu") { menu_open_ && menu_mode_ == "main" ? CloseMenu() : OpenMenu("main"); return; }
     if (c == "menuclose") { CloseMenu(); return; }
     if (c == "fold") { SetFold(!fold_); return; }
     if (c == "tab") { Activate(d->GetInt("id")); return; }
@@ -550,6 +875,8 @@ class Win : public CefWindowDelegate {
     else if (c == "bookmarks") NewTab("chrome://bookmarks", true);
     else if (c == "downloads") NewTab("chrome://downloads", true);
     else if (c == "settings") NewTab("chrome://settings", true);
+    else if (c == "extmanage") NewTab("chrome://extensions", true);
+    else if (c == "extget") NewTab("https://chromewebstore.google.com/category/extensions", true);
     else if (!b) return;
     else if (c == "back") b->GoBack();
     else if (c == "fwd") b->GoForward();
@@ -579,6 +906,7 @@ class Win : public CefWindowDelegate {
       return true;
     };
     if (k == 0x1B && menu_open_) return run([](Win* w) { w->CloseMenu(); });
+    if (k == 0x1B && pop_) return run([](Win* w) { w->ClosePop(); });
     if (alt && !ctrl && (k == 0x25 || k == 0x27))  // Alt+Left, Alt+Right
       return run([k](Win* w) {
         if (Tab* a = w->Find(w->active_))
@@ -592,7 +920,7 @@ class Win : public CefWindowDelegate {
     if (k == 'L') return run([](Win* w) { w->FocusAddress(); });
     if (k == 'H' && !shift) return run([](Win* w) { w->NewTab("chrome://history", true); });
     if (k == 'J' && !shift) return run([](Win* w) { w->NewTab("chrome://downloads", true); });
-    if (k == 'D') return true;  // Chrome's bookmark bubble needs Chrome's toolbar
+    if (k == 'D' && !shift) return run([](Win* w) { w->ToggleStar(); });
     if (k == 0x09) return run([shift](Win* w) { w->Cycle(shift ? -1 : 1); });
     if (k >= '1' && k <= '9' && !shift) {
       const int n = k - '1';
@@ -605,7 +933,184 @@ class Win : public CefWindowDelegate {
     return false;
   }
 
+  // ---- bookmarks and the start page
+
+  void ToggleStar() {
+    Tab* a = Find(active_);
+    if (!a || a->url.empty() || IsStart(a->url)) return;
+    auto& v = g_store.bookmarks;
+    if (Bookmarked(a->url))
+      v.erase(std::remove_if(v.begin(), v.end(), [a](const Bookmark& b) { return b.u == a->url; }),
+              v.end());
+    else
+      v.push_back({a->url, ShortTitle(a->title, a->url)});
+    SaveStore();
+    Broadcast();
+  }
+
+  // Commands from the start page, which is ours but runs in a tab.
+  void StartCommand(CefRefPtr<CefBrowser> b, CefRefPtr<CefDictionaryValue> d) {
+    Tab* t = TabFor(b);
+    if (!t) return;
+    const std::string c = d->GetString("c").ToString();
+    const std::string u = d->GetString("u").ToString();
+    auto& v = g_store.bookmarks;
+    if (c == "startready") { PushStart(t); return; }
+    if (c == "bmadd" && !u.empty() && !Bookmarked(u)) {
+      v.push_back({u, HostName(u)});
+    } else if (c == "bmdel") {
+      v.erase(std::remove_if(v.begin(), v.end(), [&u](const Bookmark& x) { return x.u == u; }),
+              v.end());
+    } else {
+      return;
+    }
+    SaveStore();
+    Broadcast();
+  }
+
+  void PushStart(Tab* t) {
+    if (t && t->browser && IsStart(t->url))
+      Js(t->browser, "window.ob&&ob.set({\"bm\":" + BookmarksJson() + "})");
+  }
+
+  // Bookmarks and shown extensions are shared by every window.
+  static void Broadcast() {
+    for (Win* w : g_wins) {
+      w->PushState();
+      for (auto& t : w->tabs_) w->PushStart(t.get());
+      if (w->menu_open_ && w->menu_mode_ == "ext") w->MenuState();
+    }
+  }
+
+  // ---- extensions
+
+  // Extensions are read again every few seconds, so one installed from the
+  // Chrome Web Store, or removed in Manage extensions, shows up by itself.
+  void ScanTick() {
+    if (!window_) return;
+    std::vector<Ext> e = ScanExtensions();
+    std::string sig;
+    for (auto& x : e) sig += x.id + "\t" + x.name + "\t" + x.popup + "\t" + x.icon + "\n";
+    if (sig != exts_sig_) {
+      exts_sig_ = sig;
+      exts_ = std::move(e);
+      PushState();
+      if (menu_open_ && menu_mode_ == "ext") MenuState();
+      if (!pop_id_.empty() && !FindExt(pop_id_)) ClosePop();
+    }
+    CefRefPtr<Win> self(this);
+    Post([self] { self->ScanTick(); }, 4000);
+  }
+
+  const Ext* FindExt(const std::string& id) {
+    for (auto& e : exts_)
+      if (e.id == id) return &e;
+    return nullptr;
+  }
+
+  // Show or hide an extension in the address bar. Up to two are shown; a
+  // third pushes out the one shown longest.
+  void ShowExt(const std::string& id, bool on) {
+    if (!FindExt(id)) return;
+    std::vector<std::string> v = ShownIds(exts_);
+    v.erase(std::remove(v.begin(), v.end(), id), v.end());
+    if (on) v.push_back(id);
+    while (v.size() > 2) v.erase(v.begin());
+    g_store.shown = v;
+    g_store.shown_set = true;
+    SaveStore();
+    Broadcast();
+  }
+
+  // An extension's pop-over is its own Chrome-style page, laid over the top of
+  // the page box under the address bar, as Chrome lays it under its toolbar.
+  void OpenPop(const std::string& id, double right) {
+    const Ext* e = FindExt(id);
+    if (!e || e->popup.empty() || !window_ || private_) return;
+    if (pop_pending_) return;  // one is on its way
+    ClosePop();
+    CloseMenu(false);
+    pop_id_ = id;
+    pop_r_ = right;
+    pop_w_ = kPopW;
+    pop_h_ = kPopH;
+    pop_pending_ = true;
+    pop_opened_at_ = NowMs();
+    CefWindowInfo info;
+    info.SetAsChild(window_->GetWindowHandle(), PopRectPx());
+    info.runtime_style = CEF_RUNTIME_STYLE_CHROME;
+    CefBrowserHost::CreateBrowser(info, pop_client_, "chrome-extension://" + id + "/" + e->popup,
+                                  CefBrowserSettings(), nullptr, context_);
+    Log("pop-over for " + e->name);
+    PushState();
+  }
+
+  void PopCreated(CefRefPtr<CefBrowser> b) {
+    pop_pending_ = false;
+    if (pop_id_.empty() || !window_) { b->GetHost()->CloseBrowser(true); return; }
+    pop_ = b;
+    PlacePop();
+    // Keyboard focus stays in our row until the pop-over is clicked, so a
+    // click on the page (which takes focus) closes it.
+    if (ui_view_ && ui_view_->GetBrowser()) ui_view_->GetBrowser()->GetHost()->SetFocus(true);
+  }
+
+  void PopClosed(CefRefPtr<CefBrowser> b) {
+    if (pop_ && pop_->IsSame(b)) {
+      pop_ = nullptr;
+      pop_id_.clear();
+      PushState();
+    }
+  }
+
+  void PopSize(CefRefPtr<CefBrowser> b, int w, int h) {
+    if (!pop_ || !pop_->IsSame(b)) return;
+    w = std::clamp(w, 200, 800);
+    h = std::clamp(h, 60, 600);
+    if (w == pop_w_ && h == pop_h_) return;
+    pop_w_ = w;
+    pop_h_ = h;
+    PlacePop();
+  }
+
+  void ClosePop() {
+    if (pop_id_.empty() && !pop_) return;
+    if (pop_) pop_->GetHost()->CloseBrowser(true);
+    pop_ = nullptr;
+    pop_id_.clear();
+    PushState();
+  }
+
+  void PageFocused(CefRefPtr<CefBrowser> b) {
+    if (TabFor(b) && !pop_id_.empty() && NowMs() - pop_opened_at_ > 400) ClosePop();
+  }
+
  private:
+  static constexpr int kPopW = 380, kPopH = 520;
+
+  CefRect PopRectPx() {
+    const float s = Scale();
+    const int ww = ui_view_ ? ui_view_->GetBounds().width : 1280;
+    int x = static_cast<int>(std::lround(pop_r_)) - pop_w_;
+    x = std::max(8, std::min(x, ww - pop_w_ - 8));
+    return CefRect(static_cast<int>(std::lround(x * s)),
+                   static_cast<int>(std::lround((UiHeight() + 4) * s)),
+                   static_cast<int>(std::lround(pop_w_ * s)),
+                   static_cast<int>(std::lround(pop_h_ * s)));
+  }
+
+  void PlacePop() {
+    if (!pop_ || !window_) return;
+    const unsigned long x = pop_->GetHost()->GetWindowHandle();
+    const CefRect r = PopRectPx();
+    x11::EnsureParent(x, window_->GetWindowHandle());
+    x11::Place(x, r.x, r.y, r.width, r.height);
+    x11::Show(x, true);
+    pop_->GetHost()->NotifyScreenInfoChanged();
+    pop_->GetHost()->WasResized();
+    x11::Round(x, r.width, r.height, static_cast<int>(std::lround(kRadius * Scale())));
+  }
+
   Tab* Find(int id) {
     for (auto& t : tabs_)
       if (t->id == id) return t.get();
@@ -731,7 +1236,11 @@ class Win : public CefWindowDelegate {
     const float s = Scale();
     const int w = menu_w_ > 0 ? menu_w_ : kMenuW, h = menu_h_ > 0 ? menu_h_ : kMenuH;
     const int ww = ui_view_->GetBounds().width;
-    return CefRect(static_cast<int>(std::lround((ww - 10 - w) * s)),
+    // The main menu sits under ⋯ at the right; the extensions list under its
+    // button in the address bar.
+    int x = ww - 10 - w;
+    if (menu_mode_ == "ext") x = std::max(8, std::min(static_cast<int>(std::lround(menu_r_)) + 6 - w, ww - 8 - w));
+    return CefRect(static_cast<int>(std::lround(x * s)),
                    static_cast<int>(std::lround((UiHeight() + 2) * s)),
                    static_cast<int>(std::lround(w * s)), static_cast<int>(std::lround(h * s)));
   }
@@ -746,10 +1255,13 @@ class Win : public CefWindowDelegate {
     menu_->GetHost()->SetFocus(true);
   }
 
-  void OpenMenu() {
+  void OpenMenu(const std::string& mode) {
     // A click on ⋯ while the menu is open first closes it (it loses focus),
     // so a second open within a moment is that same click.
-    if (NowMs() - menu_closed_at_ < 300) return;
+    if (NowMs() - menu_closed_at_ < 300 && mode == menu_closed_mode_) return;
+    ClosePop();
+    if (menu_mode_ != mode) { menu_w_ = 0; menu_h_ = 0; }
+    menu_mode_ = mode;
     menu_open_ = true;
     if (!menu_) {
       if (!menu_requested_) {
@@ -763,19 +1275,21 @@ class Win : public CefWindowDelegate {
                                       nullptr);
       }
     } else {
+      MenuState();  // the menu reports its new size, and is placed then
       PlaceMenu();
-      MenuState();
     }
     PushState();
   }
 
-  void CloseMenu() {
+  void CloseMenu(bool refocus = true) {
     if (!menu_open_) return;
     menu_open_ = false;
     menu_closed_at_ = NowMs();
+    menu_closed_mode_ = menu_mode_;
     if (menu_) x11::Show(menu_->GetHost()->GetWindowHandle(), false);
-    if (Tab* a = Find(active_))
-      if (a->browser) a->browser->GetHost()->SetFocus(true);
+    if (refocus)
+      if (Tab* a = Find(active_))
+        if (a->browser) a->browser->GetHost()->SetFocus(true);
     PushState();
   }
 
@@ -784,7 +1298,8 @@ class Win : public CefWindowDelegate {
     if (Tab* a = Find(active_))
       if (a->browser)
         pct = static_cast<int>(std::lround(std::pow(1.2, a->browser->GetHost()->GetZoomLevel()) * 100));
-    Js(menu_, "window.ob&&ob.set({\"zoom\":" + std::to_string(pct) + "})");
+    Js(menu_, "window.ob&&ob.set({\"zoom\":" + std::to_string(pct) + ",\"mode\":" + Q(menu_mode_) +
+                  ",\"exts\":" + ExtsJson(exts_) + "})");
   }
 
   void FocusAddress() {
@@ -802,6 +1317,7 @@ class Win : public CefWindowDelegate {
   CefRefPtr<CefRequestContext> context_;
   CefRefPtr<PageClient> page_client_;
   CefRefPtr<UiClient> ui_client_;
+  CefRefPtr<PopClient> pop_client_;
   CefRefPtr<UiDelegate> ui_delegate_;
   CefRefPtr<CefWindow> window_;
   CefRefPtr<CefBrowserView> ui_view_;
@@ -816,6 +1332,16 @@ class Win : public CefWindowDelegate {
   bool fold_ = false, menu_open_ = false, menu_requested_ = false;
   bool fullscreen_ = false, closing_all_ = false, maximized_ = false;
   ButtonSides sides_;
+  std::string menu_mode_ = "main", menu_closed_mode_;
+  double menu_r_ = 0;  // right edge of the extensions button, for its list
+  std::vector<Ext> exts_;
+  std::string exts_sig_;
+  CefRefPtr<CefBrowser> pop_;
+  std::string pop_id_;
+  double pop_r_ = 0;
+  int pop_w_ = kPopW, pop_h_ = kPopH;
+  bool pop_pending_ = false;
+  int64_t pop_opened_at_ = 0;
   IMPLEMENT_REFCOUNTING(Win);
 };
 
@@ -894,11 +1420,87 @@ void PageClient::OnLoadingStateChange(CefRefPtr<CefBrowser> b, bool loading,
   if (Tab* t = win_->TabFor(b)) {
     t->loading = loading; t->back = back; t->fwd = fwd;
     win_->PushState();
+    if (!loading) win_->PushStart(t);
   }
 }
 bool PageClient::OnPreKeyEvent(CefRefPtr<CefBrowser> b, const CefKeyEvent& e,
                                CefEventHandle, bool*) {
   return win_ && win_->TabFor(b) ? win_->Key(e) : false;
+}
+
+void PageClient::OnGotFocus(CefRefPtr<CefBrowser> b) {
+  if (!win_) return;
+  CefRefPtr<Win> w(win_);
+  Post([w, b] { w->PageFocused(b); });
+}
+// Only the start page, which is ours, may send commands, and only these.
+bool PageClient::OnConsoleMessage(CefRefPtr<CefBrowser> b, cef_log_severity_t,
+                                  const CefString& message, const CefString& source, int) {
+  const std::string m = message.ToString();
+  if (m.rfind("ob:", 0) != 0 || !win_ || !IsStart(source.ToString())) return false;
+  auto v = CefParseJSON(m.substr(3), JSON_PARSER_RFC);
+  if (!v || v->GetType() != VTYPE_DICTIONARY) return true;
+  CefRefPtr<CefDictionaryValue> d = v->GetDictionary()->Copy(false);
+  CefRefPtr<Win> w(win_);
+  Post([w, b, d] { w->StartCommand(b, d); });
+  return true;
+}
+
+void PopClient::OnAfterCreated(CefRefPtr<CefBrowser> b) {
+  ++g_browsers;
+  if (win_) win_->PopCreated(b);
+  else b->GetHost()->CloseBrowser(true);
+}
+void PopClient::OnBeforeClose(CefRefPtr<CefBrowser> b) {
+  if (win_) win_->PopClosed(b);
+  --g_browsers;
+  MaybeQuit();
+}
+// Links from a pop-over open as tabs in the window, and the pop-over closes.
+bool PopClient::OnBeforePopup(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame>, int,
+                              const CefString& target_url, const CefString&,
+                              WindowOpenDisposition d, bool, const CefPopupFeatures&,
+                              CefWindowInfo&, CefRefPtr<CefClient>&,
+                              CefBrowserSettings&, CefRefPtr<CefDictionaryValue>&,
+                              bool*) {
+  if (!win_) return false;
+  switch (d) {
+    case CEF_WOD_NEW_FOREGROUND_TAB:
+    case CEF_WOD_NEW_BACKGROUND_TAB:
+    case CEF_WOD_NEW_WINDOW:
+    case CEF_WOD_SINGLETON_TAB:
+    case CEF_WOD_SWITCH_TO_TAB: {
+      const std::string url = target_url.ToString();
+      CefRefPtr<Win> w(win_);
+      Post([w, url] { w->ClosePop(); w->NewTab(url, true); });
+      return true;
+    }
+    default:
+      return false;
+  }
+}
+bool PopClient::OnConsoleMessage(CefRefPtr<CefBrowser> b, cef_log_severity_t,
+                                 const CefString& message, const CefString&, int) {
+  const std::string m = message.ToString();
+  if (m.rfind("obpop:", 0) != 0 || !win_) return false;
+  int w = 0, h = 0;
+  if (sscanf(m.c_str() + 6, "%dx%d", &w, &h) == 2 && w > 0 && h > 0) {
+    CefRefPtr<Win> win(win_);
+    Post([win, b, w, h] { win->PopSize(b, w, h); });
+  }
+  return true;
+}
+void PopClient::OnLoadingStateChange(CefRefPtr<CefBrowser> b, bool loading, bool, bool) {
+  if (!loading) b->GetMainFrame()->ExecuteJavaScript(kMeasure, "", 0);
+}
+bool PopClient::OnPreKeyEvent(CefRefPtr<CefBrowser>, const CefKeyEvent& e,
+                              CefEventHandle, bool*) {
+  if (e.type == KEYEVENT_RAWKEYDOWN && e.windows_key_code == 0x1B && win_) {
+    CefRefPtr<Win> w(win_);
+    Post([w] { w->ClosePop(); });
+    return true;
+  }
+  return false;
 }
 
 void UiClient::OnAfterCreated(CefRefPtr<CefBrowser> b) {
@@ -994,6 +1596,8 @@ int main(int argc, char* argv[]) {
     const char* home = getenv("HOME");
     root = std::string(home ? home : ".") + "/.local/share/output-browser";
   }
+  g_root = root;
+  LoadStore();
   CefString(&settings.root_cache_path).FromString(root);
   CefString(&settings.cache_path).FromString(root + "/default");
   if (!CefInitialize(args, settings, app.get(), nullptr)) return CefGetExitCode();
