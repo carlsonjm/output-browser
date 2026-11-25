@@ -1657,9 +1657,11 @@ std::string ExeDir() {
 // own scripts run, these questions are pointed at the page it was opened
 // for: the open tab with that address (and title, if two share it).
 const char kPopShim[] = R"JS((T=>{
+let tries=0;
+const patch=()=>{
 const c=globalThis.chrome;
-if(!c||!c.tabs||!c.tabs.query){console.log('obshim:no tabs api yet');return}
-if(c.tabs.__ob)return;
+if(!c||!c.tabs||!c.tabs.query)return false;
+if(c.tabs.__ob)return true;
 const tabs=c.tabs,wins=c.windows,rq=tabs.query.bind(tabs);
 let found=null;
 const find=()=>found||(found=new Promise(res=>{
@@ -1681,7 +1683,14 @@ if(wins&&wins.get){for(const n of['getCurrent','getLastFocused']){if(!wins[n])co
     const p=find().then(t=>t?new Promise(r=>wins.get(t.windowId,o,r)):ask(real,o));
     if(typeof cb==='function'){p.then(cb);return}return p})}}
 set(tabs,'__ob',true);
-console.log('obshim:ready');
+console.log('obshim:ready after '+tries+' tries');
+return true};
+// Chrome adds the extension's tools just after this runs, so keep trying
+// until they are there: before the pop-over's own scripts, which are
+// fetched and run later.
+const again=()=>{if(patch())return;if(++tries<400)setTimeout(again,tries<50?0:5);
+  else console.log('obshim:no tabs api')};
+if(!patch()){queueMicrotask(()=>{if(!patch())setTimeout(again,0)})}
 }))JS";
 
 class App : public CefApp, public CefBrowserProcessHandler, public CefRenderProcessHandler {
