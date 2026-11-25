@@ -17,4 +17,6 @@ rm -rf "$OUT/ui"
 cp -r "$ROOT/ui" "$OUT/ui"
 g++ -std=c++20 -O2 -DNDEBUG -fno-stack-protector -I"$CEF" "$ROOT"/src/*.cc "$WRAP" -lX11 -lXext \
     -L"$CEF/Release" -lcef -Wl,-rpath,'$ORIGIN' -lpthread -ldl -o "$OUT/output-browser"
+sed "s|^Exec=output-browser|Exec=\"$OUT/output-browser\"|" "$ROOT/data/output-browser.desktop" > "$OUT/output-browser.desktop"
 echo "built: $OUT/output-browser"
+echo "to list it in the app drawer: cp \"$OUT/output-browser.desktop\" ~/.local/share/applications/"

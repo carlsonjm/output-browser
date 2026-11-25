@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Output Browser
+GenericName=Web Browser
+Comment=Browse the web
+Exec=output-browser
+Icon=internet-web-browser
+Terminal=false
+Categories=Network;WebBrowser;
+StartupNotify=true
+StartupWMClass=output-browser

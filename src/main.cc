@@ -251,6 +251,17 @@ class Win : public CefWindowDelegate {
   // row's empty space moves the window. --system-title-bar brings it back.
   bool IsFrameless(CefRefPtr<CefWindow>) override { return !Flag("system-title-bar"); }
 
+  // The window's own name, so the desktop knows it is Output Browser (and
+  // matches it to output-browser.desktop) instead of guessing from its title.
+  bool GetLinuxWindowProperties(CefRefPtr<CefWindow>,
+                                CefLinuxWindowProperties& p) override {
+    CefString(&p.wm_class_class) = "output-browser";
+    CefString(&p.wm_class_name) = "output-browser";
+    CefString(&p.wayland_app_id) = "output-browser";
+    CefString(&p.wm_role_name) = "browser";
+    return true;
+  }
+
   void DragRegions(CefRefPtr<CefBrowser> b, const std::vector<CefDraggableRegion>& r) {
     if (window_ && ui_view_ && ui_view_->GetBrowser() && ui_view_->GetBrowser()->IsSame(b))
       window_->SetDraggableRegions(r);
@@ -906,6 +917,9 @@ class App : public CefApp, public CefBrowserProcessHandler {
                                      CefRefPtr<CefCommandLine> cl) override {
     if (process_type.empty() && !cl->HasSwitch("ozone-platform"))
       cl->AppendSwitchWithValue("ozone-platform", "x11");
+    // Any window Chromium opens on its own carries the same name.
+    if (process_type.empty() && !cl->HasSwitch("class"))
+      cl->AppendSwitchWithValue("class", "output-browser");
   }
 
   void OnContextInitialized() override {
