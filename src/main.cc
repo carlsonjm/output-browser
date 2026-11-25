@@ -155,6 +155,7 @@ CefRefPtr<CefDictionaryValue> ReadJsonDict(const std::string& p) {
   auto v = CefParseJSON(s, JSON_PARSER_ALLOW_TRAILING_COMMAS);
   return v && v->GetType() == VTYPE_DICTIONARY ? v->GetDictionary() : nullptr;
 }
+// Only valid while |d| is: keep the parent in a named variable.
 CefRefPtr<CefDictionaryValue> Dict(CefRefPtr<CefDictionaryValue> d, const std::string& k) {
   return d && d->GetType(k) == VTYPE_DICTIONARY ? d->GetDictionary(k) : nullptr;
 }
@@ -236,7 +237,11 @@ std::vector<Ext> ScanExtensions() {
   std::vector<Ext> out;
   const std::string prof = ProfileDir();
   for (const char* file : {"/Secure Preferences", "/Preferences"}) {
-    auto settings = Dict(Dict(ReadJsonDict(prof + file), "extensions"), "settings");
+    // CEF's dictionaries are views into their parent, so each level is kept
+    // alive while the one inside it is read.
+    auto prefs = ReadJsonDict(prof + file);
+    auto extensions = Dict(prefs, "extensions");
+    auto settings = Dict(extensions, "settings");
     if (!settings) continue;
     CefDictionaryValue::KeyList ids;
     settings->GetKeys(ids);
