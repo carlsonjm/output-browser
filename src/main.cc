@@ -19,6 +19,7 @@
 #include <fstream>
 #include <functional>
 #include <iterator>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -29,7 +30,9 @@
 #include "include/cef_command_ids.h"
 #include "include/cef_command_line.h"
 #include "include/cef_parser.h"
+#include "include/cef_render_process_handler.h"
 #include "include/cef_request_context.h"
+#include "include/cef_v8.h"
 #include "include/cef_task.h"
 #include "include/views/cef_box_layout.h"
 #include "include/views/cef_browser_view.h"
@@ -1079,8 +1082,14 @@ class Win : public CefWindowDelegate {
     CefWindowInfo info;
     info.SetAsChild(window_->GetWindowHandle(), PopRectPx());
     info.runtime_style = CEF_RUNTIME_STYLE_CHROME;
+    // The pop-over is told which page it is for (see kPopShim).
+    CefRefPtr<CefDictionaryValue> extra = CefDictionaryValue::Create();
+    if (Tab* a = Find(active_)) {
+      extra->SetString("obpop_url", a->url);
+      extra->SetString("obpop_title", a->title);
+    }
     CefBrowserHost::CreateBrowser(info, pop_client_, "chrome-extension://" + id + "/" + e->popup,
-                                  CefBrowserSettings(), nullptr, context_);
+                                  CefBrowserSettings(), extra, context_);
     Log("pop-over for " + e->name);
     PushState();
   }
@@ -1522,6 +1531,7 @@ bool PopClient::OnBeforePopup(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame>, int,
 bool PopClient::OnConsoleMessage(CefRefPtr<CefBrowser> b, cef_log_severity_t,
                                  const CefString& message, const CefString&, int) {
   const std::string m = message.ToString();
+  if (m.rfind("obshim:", 0) == 0) { Log("pop-over " + m); return true; }
   if (m.rfind("obpop:", 0) != 0 || !win_) return false;
   int w = 0, h = 0;
   if (sscanf(m.c_str() + 6, "%dx%d", &w, &h) == 2 && w > 0 && h > 0) {
@@ -1584,9 +1594,61 @@ std::string ExeDir() {
   return p.substr(0, p.find_last_of('/'));
 }
 
-class App : public CefApp, public CefBrowserProcessHandler {
+// An extension's pop-over asks Chrome for "the active tab in this window".
+// Chrome answers that for pop-overs opened from its own toolbar; ours is a
+// page of its own, whose window holds only itself. So before the pop-over's
+// own scripts run, these questions are pointed at the page it was opened
+// for: the open tab with that address (and title, if two share it).
+const char kPopShim[] = R"JS((T=>{
+const c=globalThis.chrome;
+if(!c||!c.tabs||!c.tabs.query){console.log('obshim:no tabs api yet');return}
+if(c.tabs.__ob)return;
+const tabs=c.tabs,wins=c.windows,rq=tabs.query.bind(tabs);
+let found=null;
+const find=()=>found||(found=new Promise(res=>{
+  try{rq({},all=>{const m=(all||[]).filter(t=>t.url===T.u||t.pendingUrl===T.u);
+    const t=m.find(t=>t.title===T.t)||m[0]||null;
+    console.log('obshim:'+(t?'page is tab '+t.id:'page not found'));res(t)})}catch(e){res(null)}}));
+const wants=q=>q&&q.active===true&&(q.currentWindow===true||q.lastFocusedWindow===true)&&q.windowId===undefined;
+const ask=(fn,arg)=>new Promise(r=>fn(arg,r));
+const query=function(q,cb){
+  if(!wants(q))return rq(q,cb);
+  const p=find().then(t=>{if(!t)return ask(rq,q);const q2=Object.assign({},q);
+    delete q2.currentWindow;delete q2.lastFocusedWindow;q2.windowId=t.windowId;return ask(rq,q2)});
+  if(typeof cb==='function'){p.then(cb);return}return p};
+const set=(o,k,v)=>{try{Object.defineProperty(o,k,{value:v,configurable:true,writable:true})}catch(e){try{o[k]=v}catch(e2){}}};
+set(tabs,'query',query);
+if(wins&&wins.get){for(const n of['getCurrent','getLastFocused']){if(!wins[n])continue;
+  const real=wins[n].bind(wins);
+  set(wins,n,function(a,b){const cb=typeof a==='function'?a:b,o=typeof a==='object'&&a?a:{};
+    const p=find().then(t=>t?new Promise(r=>wins.get(t.windowId,o,r)):ask(real,o));
+    if(typeof cb==='function'){p.then(cb);return}return p})}}
+set(tabs,'__ob',true);
+console.log('obshim:ready');
+}))JS";
+
+class App : public CefApp, public CefBrowserProcessHandler, public CefRenderProcessHandler {
  public:
   CefRefPtr<CefBrowserProcessHandler> GetBrowserProcessHandler() override { return this; }
+  CefRefPtr<CefRenderProcessHandler> GetRenderProcessHandler() override { return this; }
+
+  // ---- in the page (render) processes: only for our extension pop-overs.
+  void OnBrowserCreated(CefRefPtr<CefBrowser> b, CefRefPtr<CefDictionaryValue> extra) override {
+    if (extra && extra->HasKey("obpop_url"))
+      targets_[b->GetIdentifier()] = "{\"u\":" + Q(extra->GetString("obpop_url").ToString()) +
+                                     ",\"t\":" + Q(extra->GetString("obpop_title").ToString()) + "}";
+  }
+  void OnBrowserDestroyed(CefRefPtr<CefBrowser> b) override { targets_.erase(b->GetIdentifier()); }
+  void OnContextCreated(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f,
+                        CefRefPtr<CefV8Context> ctx) override {
+    auto it = targets_.find(b->GetIdentifier());
+    if (it == targets_.end() || !f->IsMain() ||
+        f->GetURL().ToString().rfind("chrome-extension://", 0) != 0)
+      return;
+    CefRefPtr<CefV8Value> ret;
+    CefRefPtr<CefV8Exception> ex;
+    ctx->Eval(std::string(kPopShim) + "(" + it->second + ")", "", 0, ret, ex);
+  }
 
   // Tabs are embedded as X11 child windows, which Wayland does not offer, so
   // the browser runs on X11 (XWayland on a Wayland desktop).
@@ -1598,6 +1660,8 @@ class App : public CefApp, public CefBrowserProcessHandler {
     if (process_type.empty() && !cl->HasSwitch("class"))
       cl->AppendSwitchWithValue("class", "output-browser");
   }
+
+  std::map<int, std::string> targets_;
 
   void OnContextInitialized() override {
     auto cl = CefCommandLine::GetGlobalCommandLine();
