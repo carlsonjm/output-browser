@@ -5,8 +5,30 @@ Output Browser is a web browser for the Shuffle desktop, built on the
 The browser draws its own window, top row, tab strip and extension pop-overs;
 Chromium draws the web pages.
 
-The repository is at an early stage: it holds the CEF build tool and no
-browser yet.
+## How it is put together
+
+- `src/main.cc` is the browser. Each web page is a CEF Chrome-style browser
+  with Chrome's own toolbar switched off.
+- `ui/bar.html` is the top row and the tab strip that folds down under it.
+  `ui/menu.html` is the menu. Both are drawn in small Alloy-style browsers and
+  send their commands to `main.cc` as console lines that start with `ob:`.
+- `ui/start.html` is the page a new tab opens on.
+
+CEF allows one Chrome-style browser per window, and only while the window
+holds no other browser. So each tab is created in a hidden window of its own,
+and the tab that is showing is moved into the main window.
+
+## Building the browser
+
+```
+CEF=/path/to/cef_binary_... bash tools/build.sh out
+out/output-browser
+```
+
+`CEF` is a CEF binary distribution (the "minimal" one is enough). The browser
+keeps its profile in `~/.local/share/output-browser`; `--profile-dir=` changes
+that, `--url=` opens a page instead of the start page, and `--square-corners`
+leaves the page corners square.
 
 ## Building CEF
 

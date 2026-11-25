@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>New tab</title>
+<style>
+:root{
+  --surface:#141414; --raised:#242424; --edge:#5a5a5a; --ghost:#f8f8ff;
+  --sec:rgba(255,255,255,.66); --hint:rgba(255,255,255,.53); --subtle:rgba(255,255,255,.075);
+  --body:"Inter",system-ui,sans-serif; color-scheme:dark;
+}
+html,body{margin:0;min-height:100%;background:var(--surface);color:var(--ghost);font-family:var(--body)}
+.newtab{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:120px;gap:30px}
+.bigsearch{width:560px;height:52px;border-radius:26px;background:var(--raised);border:1px solid var(--edge);display:flex;align-items:center;gap:12px;padding:0 20px;font-size:16px;color:var(--hint)}
+.bigsearch svg{width:18px;height:18px;color:var(--sec);flex:none}
+.bigsearch input{flex:1;min-width:0;border:0;outline:0;background:transparent;padding:0;font:16px var(--body);color:var(--ghost)}
+.bigsearch input::placeholder{color:var(--hint)}
+.engine{font-size:12px;color:var(--hint);margin-top:-18px}
+.lbl{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--hint)}
+.bm{display:grid;grid-template-columns:repeat(8,80px);gap:18px}
+.bmi{display:grid;justify-items:center;gap:8px;font-size:12px;color:var(--sec);text-decoration:none;text-align:center}
+.bmi i{width:52px;height:52px;border-radius:10px;background:var(--subtle);display:grid;place-items:center;font-style:normal;font-weight:600;font-size:18px;color:var(--ghost)}
+a.bmi:hover i{background:rgba(255,255,255,.125)}
+</style>
+</head>
+<body>
+<div class="newtab">
+  <form class="bigsearch" id="f"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="8" cy="8" r="5.5"/><path d="m12.2 12.2 3.8 3.8"/></svg><input id="q" autofocus spellcheck="false" autocomplete="off" placeholder="Search the web or type an address"></form>
+  <div class="engine">Searches with DuckDuckGo, the same as Search's web line</div>
+  <div class="lbl">Bookmarks</div>
+  <div class="bm">
+    <a class="bmi" href="https://mail.google.com/"><i>M</i>Mail</a>
+    <a class="bmi" href="https://www.youtube.com/"><i>Y</i>YouTube</a>
+    <a class="bmi" href="https://weather.com/"><i>W</i>Weather</a>
+    <a class="bmi" href="https://www.netflix.com/"><i>N</i>Netflix</a>
+    <a class="bmi" href="https://docs.google.com/"><i>D</i>Docs</a>
+    <div class="bmi"><i>+</i>Add</div>
+  </div>
+</div>
+<script>
+function toUrl(t){
+  t=t.trim(); if(!t) return null;
+  if(/^[a-z][a-z0-9+.-]*:\/\//i.test(t)||/^(about|chrome|data|view-source):/i.test(t)) return t;
+  if(!/\s/.test(t)&&(/^[^\s\/:]+\.[a-z]{2,}(:\d+)?([\/?#].*)?$/i.test(t)||/^localhost(:\d+)?([\/?#].*)?$/i.test(t)||/^\d{1,3}(\.\d{1,3}){3}(:\d+)?([\/?#].*)?$/.test(t))) return 'https://'+t;
+  return 'https://duckduckgo.com/?q='+encodeURIComponent(t);
+}
+document.getElementById('f').addEventListener('submit',e=>{
+  e.preventDefault();
+  const u=toUrl(document.getElementById('q').value); if(u) location.href=u;
+});
+</script>
+</body>
+</html>

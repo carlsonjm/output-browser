@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Output Browser menu</title>
+<style>
+:root{
+  --raised:#242424; --divider:#333333; --ghost:#f8f8ff; --hint:rgba(255,255,255,.53);
+  --hover:rgba(255,255,255,.125); --body:"Inter",system-ui,sans-serif; color-scheme:dark;
+}
+html,body{margin:0;background:#1a1a1a;overflow:hidden;font-family:var(--body);color:var(--ghost);user-select:none;cursor:default}
+/* The menu fills its own small window, so its edge is the window's edge. */
+.menu{width:280px;background:#1a1a1a;border:1px solid var(--divider);padding:6px;display:grid;gap:1px}
+.mrow{height:32px;border-radius:10px;display:flex;align-items:center;gap:8px;padding:0 10px;font-size:13px;color:var(--ghost)}
+.mrow:hover{background:var(--hover)}
+.mrow span{display:flex;align-items:center;gap:8px}
+.mrow kbd{margin-left:auto;font:11px var(--body);color:var(--hint)}
+.mrow em{margin-left:auto;font-style:normal;color:var(--hint);font-size:12px}
+.mrow.dim span{color:var(--hint)}
+.mrow.dim:hover,.mrow.zoom:hover{background:transparent}
+.msep{height:1px;background:var(--divider);margin:4px 8px}
+.zp{margin-left:auto;display:flex;align-items:center;gap:2px}
+.zp i{width:26px;height:24px;border-radius:12px;background:var(--raised);display:grid;place-items:center;font-style:normal}
+.zp i:hover{background:#2e2e2e}
+</style>
+</head>
+<body>
+<div class="menu" id="m">
+  <div class="mrow" data-c="newtab"><span>New tab</span><kbd>Ctrl T</kbd></div>
+  <div class="mrow" data-c="private"><span>New private window</span><kbd>Ctrl Shift N</kbd></div>
+  <div class="msep"></div>
+  <div class="mrow" data-c="find"><span>Find on page</span><kbd>Ctrl F</kbd></div>
+  <div class="mrow zoom"><span>Zoom</span><div class="zp"><i data-c="zoomout">−</i><b id="z">100%</b><i data-c="zoomin">+</i></div></div>
+  <div class="mrow dim"><span>Reader view</span></div>
+  <div class="msep"></div>
+  <div class="mrow dim"><span>Add this tab to a group</span><em>›</em></div>
+  <div class="mrow dim"><span>Make this tab a Card</span></div>
+  <div class="msep"></div>
+  <div class="mrow" data-c="history"><span>History</span><kbd>Ctrl H</kbd></div>
+  <div class="mrow" data-c="bookmarks"><span>Bookmarks and pinned sites</span></div>
+  <div class="mrow" data-c="downloads"><span>Downloads</span></div>
+  <div class="msep"></div>
+  <div class="mrow" data-c="settings"><span>Browser settings</span></div>
+</div>
+<script>
+const send=o=>console.log('ob:'+JSON.stringify(o));
+window.ob={set(o){if('zoom' in o)document.getElementById('z').textContent=o.zoom+'%'}};
+document.getElementById('m').addEventListener('click',e=>{
+  const t=e.target.closest('[data-c]'); if(t) send({c:t.dataset.c});
+});
+addEventListener('keydown',e=>{if(e.key==='Escape')send({c:'menuclose'})});
+addEventListener('blur',()=>send({c:'menuclose'}));
+document.addEventListener('contextmenu',e=>e.preventDefault());
+addEventListener('DOMContentLoaded',()=>{
+  const m=document.getElementById('m');
+  send({c:'menusize',w:m.offsetWidth,h:m.offsetHeight});
+  send({c:'menuready'});
+});
+</script>
+</body>
+</html>
