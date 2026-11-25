@@ -330,8 +330,8 @@ class Win : public CefWindowDelegate {
 
   void OnWindowBoundsChanged(CefRefPtr<CefWindow>, const CefRect&) override {
     PlaceActive();
-    if (window_ && window_->IsMaximized() != maximized_) {
-      maximized_ = window_->IsMaximized();
+    if (window_ && LooksMaximized() != maximized_) {
+      maximized_ = LooksMaximized();
       PushState();
     }
     if (menu_open_) CloseMenu();
@@ -519,7 +519,7 @@ class Win : public CefWindowDelegate {
 
     if (c == "ready") { sides_ = ReadButtonSides(); PushState(); return; }
     if (c == "winmin") { window_->Minimize(); return; }
-    if (c == "winmax") { window_->IsMaximized() ? window_->Restore() : window_->Maximize(); return; }
+    if (c == "winmax") { ToggleMax(); return; }
     if (c == "winclose") { window_->Close(); return; }
     if (c == "menuready") { MenuState(); return; }
     if (c == "menusize") {
@@ -641,6 +641,41 @@ class Win : public CefWindowDelegate {
     int i = it == open.end() ? 0 : static_cast<int>(it - open.begin());
     i = (i + dir + static_cast<int>(open.size())) % static_cast<int>(open.size());
     Activate(open[i]);
+  }
+
+  // True when the window fills the screen's work area, whether or not the
+  // desktop calls it maximised. A desktop can hand the full-screen size back
+  // as the window's normal size, which leaves nothing smaller to return to.
+  bool FillsWorkArea() {
+    auto d = window_ ? window_->GetDisplay() : nullptr;
+    if (!d) return false;
+    const CefRect a = d->GetWorkArea(), b = window_->GetBounds();
+    return b.width >= a.width - 4 && b.height >= a.height - 4;
+  }
+  bool LooksMaximized() { return window_ && (window_->IsMaximized() || FillsWorkArea()); }
+
+  // A comfortable size in the middle of the screen, for when there is no
+  // smaller size to restore to.
+  void RestoreToDefaultSize() {
+    auto d = window_ ? window_->GetDisplay() : nullptr;
+    if (!d) return;
+    const CefRect a = d->GetWorkArea();
+    const int w = std::min(1280, a.width * 3 / 4), h = std::min(860, a.height * 4 / 5);
+    window_->SetBounds(CefRect(a.x + (a.width - w) / 2, a.y + (a.height - h) / 2, w, h));
+  }
+
+  void ToggleMax() {
+    if (window_->IsMaximized()) {
+      window_->Restore();
+      // If the size it restores to is the whole screen again, pick one.
+      CefRefPtr<Win> self = this;
+      Post([self] { if (self->window_ && self->FillsWorkArea() && !self->window_->IsMaximized())
+                      self->RestoreToDefaultSize(); }, 250);
+    } else if (FillsWorkArea()) {
+      RestoreToDefaultSize();
+    } else {
+      window_->Maximize();
+    }
   }
 
   float Scale() {
