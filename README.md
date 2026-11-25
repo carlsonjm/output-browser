@@ -1,6 +1,6 @@
-# output-browser
+# Output Browser
 
-A web browser for the Shuffle desktop, built on the
+Output Browser is a web browser for the Shuffle desktop, built on the
 [Chromium Embedded Framework](https://github.com/chromiumembedded/cef) (CEF).
 The browser draws its own window, top row, tab strip and extension pop-overs;
 Chromium draws the web pages.
