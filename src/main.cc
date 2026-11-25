@@ -225,9 +225,16 @@ bool Disabled(CefRefPtr<CefDictionaryValue> s) {
   return false;
 }
 
+// Chrome keeps the profile in "Default" under the root folder.
+std::string ProfileDir() {
+  for (const char* name : {"/Default", "/default"})
+    if (!ReadFile(g_root + name + "/Preferences").empty()) return g_root + name;
+  return g_root + "/Default";
+}
+
 std::vector<Ext> ScanExtensions() {
   std::vector<Ext> out;
-  const std::string prof = g_root + "/default";
+  const std::string prof = ProfileDir();
   for (const char* file : {"/Secure Preferences", "/Preferences"}) {
     auto settings = Dict(Dict(ReadJsonDict(prof + file), "extensions"), "settings");
     if (!settings) continue;
@@ -239,7 +246,8 @@ std::vector<Ext> ScanExtensions() {
       auto st = Dict(settings, id);
       if (!st || Disabled(st)) continue;
       const int loc = st->GetType("location") == VTYPE_INT ? st->GetInt("location") : 0;
-      if (loc == 5 || loc == 10) continue;  // built into the browser
+      // 5 and 10 are built into the browser; 8 was loaded for one run only.
+      if (loc == 5 || loc == 8 || loc == 10) continue;
       const std::string path = Str(st, "path");
       if (path.empty()) continue;
       const std::string dir = path[0] == '/' ? path : prof + "/Extensions/" + path;
@@ -516,6 +524,7 @@ const char kMeasure[] =
     "r()})()";
 
 std::vector<Win*> g_wins;
+Win* g_active = nullptr;  // the browser window last in use
 
 class Win : public CefWindowDelegate {
  public:
@@ -595,6 +604,7 @@ class Win : public CefWindowDelegate {
     ui_client_->Detach();
     pop_client_->Detach();
     g_wins.erase(std::remove(g_wins.begin(), g_wins.end(), this), g_wins.end());
+    if (g_active == this) g_active = nullptr;
     pop_ = nullptr;
     ui_view_ = nullptr;
     content_ = nullptr;
@@ -624,6 +634,31 @@ class Win : public CefWindowDelegate {
     if (menu_) menu_->GetHost()->CloseBrowser(true);
     auto b = ui_view_ ? ui_view_->GetBrowser() : nullptr;
     return b ? b->GetHost()->TryCloseBrowser() : true;
+  }
+
+  void OnWindowActivationChanged(CefRefPtr<CefWindow>, bool active) override {
+    if (active) g_active = this;
+  }
+
+  unsigned long MainXid() const { return window_ ? window_->GetWindowHandle() : 0; }
+
+  // Chrome opens some of its own windows with nothing to belong to, such as
+  // the "Add extension?" confirmation. Each becomes a dialog of the browser
+  // window in use, so it opens small over it instead of as its own app.
+  static void WatchStrays() {
+    std::vector<unsigned long> known;
+    for (Win* w : g_wins)
+      if (w->MainXid()) known.push_back(w->MainXid());
+    Win* owner = nullptr;
+    for (Win* w : g_wins)
+      if (w == g_active && w->MainXid()) owner = w;
+    if (!owner && !g_wins.empty()) owner = g_wins.back();
+    if (owner && owner->MainXid())
+      for (unsigned long x : x11::StrayToplevels(known)) {
+        Log("own window " + x11::Describe(x) + " becomes a dialog of the browser window");
+        x11::MakeDialog(x, owner->MainXid());
+      }
+    Post(WatchStrays, 500);
   }
 
   void OnWindowBoundsChanged(CefRefPtr<CefWindow>, const CefRect&) override {
@@ -1571,6 +1606,7 @@ class App : public CefApp, public CefBrowserProcessHandler {
     }
     if (url.empty()) url = StartUrl();
     Win::OpenWindow(false, url);
+    Post(Win::WatchStrays, 1000);
   }
  private:
   IMPLEMENT_REFCOUNTING(App);
