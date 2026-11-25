@@ -533,6 +533,31 @@ const char kMeasure[] =
 
 std::vector<Win*> g_wins;
 Win* g_active = nullptr;  // the browser window last in use
+std::vector<unsigned long> g_routed;  // Chrome's own windows whose page moved into a tab
+
+// Client for windows Chrome opens by itself, with tabs on top: for example an
+// extension's welcome page after it is installed. Each one's page opens as a
+// tab in our window instead, and Chrome's window closes.
+class StrayClient : public CefClient, public CefLifeSpanHandler,
+                    public CefDisplayHandler, public CefLoadHandler {
+ public:
+  CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
+  CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
+  CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
+  void OnAfterCreated(CefRefPtr<CefBrowser> b) override;
+  void OnBeforeClose(CefRefPtr<CefBrowser>) override;
+  void OnAddressChange(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f,
+                       const CefString& url) override {
+    if (f->IsMain()) Route(b, url.ToString());
+  }
+  void OnLoadingStateChange(CefRefPtr<CefBrowser> b, bool, bool, bool) override {
+    Route(b, b->GetMainFrame()->GetURL().ToString());
+  }
+ private:
+  void Route(CefRefPtr<CefBrowser> b, const std::string& url);
+  std::vector<int> done_;
+  IMPLEMENT_REFCOUNTING(StrayClient);
+};
 
 class Win : public CefWindowDelegate {
  public:
@@ -654,7 +679,7 @@ class Win : public CefWindowDelegate {
   // the "Add extension?" confirmation. Each becomes a dialog of the browser
   // window in use, so it opens small over it instead of as its own app.
   static void WatchStrays() {
-    std::vector<unsigned long> known;
+    std::vector<unsigned long> known = g_routed;
     for (Win* w : g_wins)
       if (w->MainXid()) known.push_back(w->MainXid());
     Win* owner = nullptr;
@@ -1553,6 +1578,38 @@ bool PopClient::OnPreKeyEvent(CefRefPtr<CefBrowser>, const CefKeyEvent& e,
   return false;
 }
 
+void StrayClient::OnAfterCreated(CefRefPtr<CefBrowser> b) {
+  ++g_browsers;
+  const unsigned long x = b->GetHost()->GetWindowHandle();
+  g_routed.push_back(x);
+  x11::Show(x, false);
+  Log("Chrome opened a window of its own (" + x11::Describe(x) + "); its page moves into a tab");
+  Route(b, b->GetMainFrame()->GetURL().ToString());
+}
+void StrayClient::OnBeforeClose(CefRefPtr<CefBrowser> b) {
+  const unsigned long x = b->GetHost()->GetWindowHandle();
+  g_routed.erase(std::remove(g_routed.begin(), g_routed.end(), x), g_routed.end());
+  --g_browsers;
+  MaybeQuit();
+}
+void StrayClient::Route(CefRefPtr<CefBrowser> b, const std::string& url) {
+  if (url.empty() || url == "about:blank") return;
+  const int id = b->GetIdentifier();
+  if (std::find(done_.begin(), done_.end(), id) != done_.end()) return;
+  done_.push_back(id);
+  Log("page from Chrome's own window opens as a tab: " + url);
+  Win* owner = g_active;
+  if (std::find(g_wins.begin(), g_wins.end(), owner) == g_wins.end())
+    owner = g_wins.empty() ? nullptr : g_wins.back();
+  if (owner) {
+    CefRefPtr<Win> w(owner);
+    Post([w, url] { w->NewTab(url, true); });
+  } else {
+    Post([url] { Win::OpenWindow(false, url); });
+  }
+  b->GetHost()->CloseBrowser(true);
+}
+
 void UiClient::OnAfterCreated(CefRefPtr<CefBrowser> b) {
   ++g_browsers;
   if (win_) win_->UiCreated(b);
@@ -1631,6 +1688,11 @@ class App : public CefApp, public CefBrowserProcessHandler, public CefRenderProc
  public:
   CefRefPtr<CefBrowserProcessHandler> GetBrowserProcessHandler() override { return this; }
   CefRefPtr<CefRenderProcessHandler> GetRenderProcessHandler() override { return this; }
+  CefRefPtr<CefClient> GetDefaultClient() override {
+    if (!stray_) stray_ = new StrayClient;
+    return stray_;
+  }
+  CefRefPtr<StrayClient> stray_;
 
   // ---- in the page (render) processes: only for our extension pop-overs.
   void OnBrowserCreated(CefRefPtr<CefBrowser> b, CefRefPtr<CefDictionaryValue> extra) override {
