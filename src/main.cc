@@ -315,7 +315,9 @@ class Win : public CefWindowDelegate {
     Tab* t = Find(id);
     if (!t) { b->GetHost()->CloseBrowser(true); return; }
     t->browser = b;
-    Log("tab " + std::to_string(id) + " created, x11 window " + std::to_string(t->xid()));
+    Log("tab " + std::to_string(id) + " created: " + x11::Describe(t->xid()));
+    Log("main window: " + x11::Describe(window_ ? window_->GetWindowHandle() : 0) +
+        ", scale " + std::to_string(Scale()));
     if (activate || !Find(active_)) Activate(id);
     else x11::Show(t->xid(), false);
     PushState();
@@ -329,6 +331,7 @@ class Win : public CefWindowDelegate {
     PlaceActive();
     x11::Show(t->xid(), true);
     if (old && old != t) x11::Show(old->xid(), false);
+    Log("showing tab " + std::to_string(id) + ": " + x11::Describe(t->xid()));
     t->browser->GetHost()->SetFocus(true);
     if (menu_open_) CloseMenu();
     PushState();
@@ -570,6 +573,8 @@ class Win : public CefWindowDelegate {
     Tab* t = Find(active_);
     if (!t || !t->browser) return;
     const CefRect r = PageRectPx();
+    if (x11::EnsureParent(t->xid(), window_->GetWindowHandle()))
+      Log("tab " + std::to_string(t->id) + " was not inside the main window; moved it in");
     x11::Place(t->xid(), r.x, r.y, r.width, r.height);
     const int radius = Flag("square-corners") || fullscreen_
                            ? 0 : static_cast<int>(std::lround(kRadius * Scale()));
@@ -598,6 +603,7 @@ class Win : public CefWindowDelegate {
     if (!menu_) return;
     const unsigned long x = menu_->GetHost()->GetWindowHandle();
     const CefRect r = MenuRectPx();
+    x11::EnsureParent(x, window_->GetWindowHandle());
     x11::Place(x, r.x, r.y, r.width, r.height);
     x11::Show(x, true);
     menu_->GetHost()->SetFocus(true);
