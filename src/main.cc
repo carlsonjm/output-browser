@@ -15,6 +15,7 @@
 #include <cmath>
 #include <cstdio>
 #include <deque>
+#include <fstream>
 #include <functional>
 #include <memory>
 #include <string>
@@ -55,6 +56,38 @@ std::string UiUrl(const std::string& f) { return "file://" + g_ui + "/" + f; }
 std::string StartUrl() { return UiUrl("start.html"); }
 bool IsStart(const std::string& u) { return u.rfind(StartUrl(), 0) == 0; }
 bool Flag(const char* name) { return CefCommandLine::GetGlobalCommandLine()->HasSwitch(name); }
+
+// Which window buttons go on which side, from the desktop's own setting
+// (KWin's title bar buttons, which Shuffle's Settings changes). Only
+// minimise (I), maximise (A) and close (X) are kept, in the desktop's order.
+struct ButtonSides { std::string left = "", right = "IAX"; };
+ButtonSides ReadButtonSides() {
+  ButtonSides s;
+  // Shuffle's defaults: menu on the left, minimise, maximise, close on the right.
+  const char* xdg = getenv("XDG_CONFIG_HOME");
+  const char* home = getenv("HOME");
+  const std::string path = xdg && *xdg ? std::string(xdg) + "/kwinrc"
+                                       : std::string(home ? home : ".") + "/.config/kwinrc";
+  std::ifstream f(path);
+  std::string line, group;
+  std::string left = "M", right = "IAX";
+  while (std::getline(f, line)) {
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    if (!line.empty() && line[0] == '[') { group = line; continue; }
+    if (group != "[org.kde.kdecoration2]") continue;
+    if (line.rfind("ButtonsOnLeft=", 0) == 0) left = line.substr(14);
+    if (line.rfind("ButtonsOnRight=", 0) == 0) right = line.substr(15);
+  }
+  auto keep = [](const std::string& in) {
+    std::string o;
+    for (char c : in) if (c == 'I' || c == 'A' || c == 'X') o += c;
+    return o;
+  };
+  s.left = keep(left);
+  s.right = keep(right);
+  if (s.left.empty() && s.right.empty()) s.right = "IAX";
+  return s;
+}
 
 void Log(const std::string& s) {
   fprintf(stderr, "[output-browser] %s\n", s.c_str());
@@ -170,15 +203,19 @@ class PageClient : public CefClient, public CefLifeSpanHandler,
 // Client for our own HTML: the row and strip, and the menu. Only these
 // browsers may send commands, by console lines that start with "ob:".
 class UiClient : public CefClient, public CefLifeSpanHandler,
-                 public CefDisplayHandler, public CefKeyboardHandler {
+                 public CefDisplayHandler, public CefKeyboardHandler,
+                 public CefDragHandler {
  public:
   explicit UiClient(Win* w) : win_(w) {}
   void Detach() { win_ = nullptr; }
   CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
   CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
   CefRefPtr<CefKeyboardHandler> GetKeyboardHandler() override { return this; }
+  CefRefPtr<CefDragHandler> GetDragHandler() override { return this; }
   void OnAfterCreated(CefRefPtr<CefBrowser> b) override;
   void OnBeforeClose(CefRefPtr<CefBrowser> b) override;
+  void OnDraggableRegionsChanged(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame>,
+                                 const std::vector<CefDraggableRegion>& regions) override;
   bool OnConsoleMessage(CefRefPtr<CefBrowser>, cef_log_severity_t,
                         const CefString& message, const CefString& source,
                         int) override;
@@ -209,6 +246,15 @@ class Win : public CefWindowDelegate {
 
   // The main window holds only our own (Alloy-style) browser for the row.
   cef_runtime_style_t GetWindowRuntimeStyle() override { return CEF_RUNTIME_STYLE_ALLOY; }
+
+  // No desktop title bar: the window buttons are in our own row, and the
+  // row's empty space moves the window. --system-title-bar brings it back.
+  bool IsFrameless(CefRefPtr<CefWindow>) override { return !Flag("system-title-bar"); }
+
+  void DragRegions(CefRefPtr<CefBrowser> b, const std::vector<CefDraggableRegion>& r) {
+    if (window_ && ui_view_ && ui_view_->GetBrowser() && ui_view_->GetBrowser()->IsSame(b))
+      window_->SetDraggableRegions(r);
+  }
 
   void OnWindowCreated(CefRefPtr<CefWindow> w) override {
     window_ = w;
@@ -273,6 +319,10 @@ class Win : public CefWindowDelegate {
 
   void OnWindowBoundsChanged(CefRefPtr<CefWindow>, const CefRect&) override {
     PlaceActive();
+    if (window_ && window_->IsMaximized() != maximized_) {
+      maximized_ = window_->IsMaximized();
+      PushState();
+    }
     if (menu_open_) CloseMenu();
   }
 
@@ -431,7 +481,9 @@ class Win : public CefWindowDelegate {
       window_->SetTitle(title);
     }
     s += ",\"fold\":" + std::string(B(fold_)) + ",\"menu\":" + B(menu_open_) +
-         ",\"private\":" + B(private_) + "}";
+         ",\"private\":" + B(private_) + ",\"max\":" + B(maximized_);
+    if (IsFrameless(window_)) s += ",\"wl\":" + Q(sides_.left) + ",\"wr\":" + Q(sides_.right);
+    s += "}";
     Js(ui_view_ ? ui_view_->GetBrowser() : nullptr, "window.ob&&ob.set(" + s + ")");
   }
 
@@ -454,7 +506,10 @@ class Win : public CefWindowDelegate {
     CefRefPtr<CefBrowser> b;
     if (Tab* a = Find(active_)) b = a->browser;
 
-    if (c == "ready") { PushState(); return; }
+    if (c == "ready") { sides_ = ReadButtonSides(); PushState(); return; }
+    if (c == "winmin") { window_->Minimize(); return; }
+    if (c == "winmax") { window_->IsMaximized() ? window_->Restore() : window_->Maximize(); return; }
+    if (c == "winclose") { window_->Close(); return; }
     if (c == "menuready") { MenuState(); return; }
     if (c == "menusize") {
       menu_w_ = d->GetInt("w");
@@ -713,7 +768,8 @@ class Win : public CefWindowDelegate {
   int menu_w_ = 0, menu_h_ = 0;
   int64_t menu_closed_at_ = 0;
   bool fold_ = false, menu_open_ = false, menu_requested_ = false;
-  bool fullscreen_ = false, closing_all_ = false;
+  bool fullscreen_ = false, closing_all_ = false, maximized_ = false;
+  ButtonSides sides_;
   IMPLEMENT_REFCOUNTING(Win);
 };
 
@@ -820,6 +876,10 @@ bool UiClient::OnConsoleMessage(CefRefPtr<CefBrowser>, cef_log_severity_t,
   CefRefPtr<Win> w(win_);
   Post([w, d] { w->Command(d); });
   return true;
+}
+void UiClient::OnDraggableRegionsChanged(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame>,
+                                         const std::vector<CefDraggableRegion>& regions) {
+  if (win_) win_->DragRegions(b, regions);
 }
 bool UiClient::OnPreKeyEvent(CefRefPtr<CefBrowser>, const CefKeyEvent& e,
                              CefEventHandle, bool*) {
