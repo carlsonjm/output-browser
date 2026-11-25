@@ -121,6 +121,7 @@ struct Tab {
   CefRefPtr<CefBrowser> browser;  // set once created
   std::string url, title, fav;
   bool loading = false, back = false, fwd = false, closing = false;
+  std::string first_url;  // loaded once the tab's window is in place
   unsigned long xid() const { return browser ? browser->GetHost()->GetWindowHandle() : 0; }
 };
 
@@ -291,6 +292,7 @@ class Win : public CefWindowDelegate {
     auto t = std::make_unique<Tab>();
     t->id = ++next_id_;
     t->url = url;
+    t->first_url = url;
     t->title = IsStart(url) ? "New tab" : url;
     pending_.push_back({t->id, activate});
     const int id = t->id;
@@ -306,8 +308,10 @@ class Win : public CefWindowDelegate {
     const CefRect r = PageRectPx();
     info.SetAsChild(parent, r);
     info.runtime_style = CEF_RUNTIME_STYLE_CHROME;
-    CefBrowserHost::CreateBrowser(info, page_client_, url, CefBrowserSettings(), nullptr,
-                                  context_);
+    // The tab starts blank and loads its page only once its window is placed:
+    // a page whose first paint happens before that never shows.
+    CefBrowserHost::CreateBrowser(info, page_client_, "about:blank", CefBrowserSettings(),
+                                  nullptr, context_);
     Log("new tab " + std::to_string(id) + " " + url);
     PushState();
   }
@@ -325,6 +329,15 @@ class Win : public CefWindowDelegate {
         ", scale " + std::to_string(Scale()));
     if (activate || !Find(active_)) Activate(id);
     else x11::Show(t->xid(), false);
+    CefRefPtr<Win> self(this);
+    Post([self, id] {
+      Tab* tt = self->Find(id);
+      if (!tt || !tt->browser || tt->first_url.empty()) return;
+      self->PlaceActive();
+      const std::string u = tt->first_url;
+      tt->first_url.clear();
+      tt->browser->GetMainFrame()->LoadURL(u);
+    }, 100);
     PushState();
   }
 
@@ -593,6 +606,9 @@ class Win : public CefWindowDelegate {
     x11::Place(t->xid(), r.x, r.y, r.width, r.height);
     Log("place tab " + std::to_string(t->id) + " at " + std::to_string(r.x) + "," +
         std::to_string(r.y) + " size " + std::to_string(r.width) + "x" + std::to_string(r.height));
+    auto host = t->browser->GetHost();
+    host->NotifyScreenInfoChanged();
+    host->WasResized();
     const int radius = Flag("square-corners") || fullscreen_
                            ? 0 : static_cast<int>(std::lround(kRadius * Scale()));
     x11::Round(t->xid(), r.width, r.height, radius);
@@ -740,11 +756,19 @@ bool PageClient::OnBeforePopup(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame>, int,
 void PageClient::OnAddressChange(CefRefPtr<CefBrowser> b, CefRefPtr<CefFrame> f,
                                  const CefString& url) {
   if (!win_ || !f->IsMain()) return;
-  if (Tab* t = win_->TabFor(b)) { t->url = url.ToString(); win_->PushState(); }
+  if (Tab* t = win_->TabFor(b)) {
+    if (!t->first_url.empty()) return;  // still the blank starting page
+    t->url = url.ToString();
+    win_->PushState();
+  }
 }
 void PageClient::OnTitleChange(CefRefPtr<CefBrowser> b, const CefString& title) {
   if (!win_) return;
-  if (Tab* t = win_->TabFor(b)) { t->title = title.ToString(); win_->PushState(); }
+  if (Tab* t = win_->TabFor(b)) {
+    if (!t->first_url.empty()) return;
+    t->title = title.ToString();
+    win_->PushState();
+  }
 }
 void PageClient::OnFaviconURLChange(CefRefPtr<CefBrowser> b,
                                     const std::vector<CefString>& urls) {
