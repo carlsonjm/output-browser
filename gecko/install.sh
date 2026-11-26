@@ -21,6 +21,8 @@ fi
 mkdir -p "$DEST/firefox/defaults/pref"
 cp "$HERE/autoconfig/config-prefs.js" "$DEST/firefox/defaults/pref/"
 cp "$HERE/autoconfig/config.js" "$DEST/firefox/config.js"
+mkdir -p "$DEST/firefox/distribution"
+echo '{"policies":{"SearchEngines":{"Default":"DuckDuckGo"}}}' > "$DEST/firefox/distribution/policies.json"
 mkdir -p "$DEST/profile/chrome"
 cp "$HERE"/profile/chrome/* "$DEST/profile/chrome/"
 sed "s|@START@|file://$DEST/profile/chrome/start.html|" "$HERE/profile/user.js" > "$DEST/profile/user.js"

@@ -112,9 +112,18 @@
   }
 
   // The address's placeholder, as in the mock-up.
+  // Firefox's translations set it again whenever the search engine changes,
+  // so ours is put back each time.
   function placeholder() {
     const input = doc.getElementById("urlbar-input") || gURLBar?.inputField;
-    if (input) input.setAttribute("placeholder", "Search or type an address");
+    if (!input) return;
+    const TEXT = "Search or type an address";
+    const put = () => {
+      if (input.hasAttribute("data-l10n-id")) input.removeAttribute("data-l10n-id");
+      if (input.getAttribute("placeholder") !== TEXT) input.setAttribute("placeholder", TEXT);
+    };
+    put();
+    new MutationObserver(put).observe(input, { attributes: true, attributeFilter: ["placeholder", "data-l10n-id"] });
   }
 
   // ---- the tab strip
@@ -130,28 +139,58 @@
     if (c) c.setAttribute("value", String(n));
   }
 
-  // ---- the menu: only the rows the mock-up has, in its groups.
-  function trimMenu() {
-    const hide = [
-      "appMenu-fxa-status2", "appMenu-fxa-separator", "appMenu-new-window-button2",
-      "appMenu-passwords-button", "appMenu-extensions-themes-button", "appMenu-print-button",
-      "appMenu-save-file-button", "appMenu-translate-button", "appMenu-more-button2",
-      "appMenu-report-broken-site-button", "appMenu-help-button2", "appMenu-quit-button2",
-      "appMenu-restoreSession", "appMenu-profiles-button", "appMenu-proton-update-banner",
-    ];
-    const view = doc.getElementById("appMenu-mainView") ||
-                 doc.querySelector("#appMenu-popup panelview, template#appMenu-viewCache");
-    const apply = () => {
-      for (const id of hide) doc.getElementById(id)?.setAttribute("hidden", "true");
-      const rename = { "appMenu-settings-button": "Browser settings",
-                       "appMenu-bookmarks-button": "Bookmarks and pinned sites" };
-      for (const [id, label] of Object.entries(rename))
-        doc.getElementById(id)?.setAttribute("label", label);
+  // ---- the menu: only the rows the mock-up has, in its groups:
+  // open something new, read the page, find things again, settings.
+  const MENU = [
+    [/new-tab/, "New tab"],
+    [/private-window/, "New private window"],
+    "-",
+    [/find/, "Find on page"],
+    [/zoom/, null],
+    "-",
+    [/history/, "History"],
+    [/bookmarks/, "Bookmarks and pinned sites"],
+    [/downloads/, "Downloads"],
+    "-",
+    [/settings|preferences/, "Browser settings"],
+  ];
+  let menuLogged = false;
+  function shapeMenu() {
+    const view = doc.getElementById("appMenu-mainView");
+    const body = view?.querySelector(".panel-subview-body") || view;
+    if (!body) return;
+    const items = [...body.children];
+    if (!menuLogged) { menuLogged = true; log("menu rows: " + items.map(e => e.id || e.localName).join(" ")); }
+    const used = new Set();
+    let last = null;
+    const sepFor = () => {
+      let sep = items.find(e => e.localName === "toolbarseparator" && !used.has(e));
+      if (!sep) { sep = doc.createXULElement("toolbarseparator"); }
+      used.add(sep);
+      return sep;
     };
-    // The menu is built the first time it opens.
-    doc.getElementById("appMenu-popup")?.addEventListener("popupshowing", apply);
-    PanelUI?.mainView?.addEventListener?.("ViewShowing", apply);
-    if (view) apply();
+    for (const row of MENU) {
+      let el;
+      if (row === "-") el = sepFor();
+      else {
+        el = items.find(e => !used.has(e) && e.id && row[0].test(e.id) &&
+                             e.localName !== "toolbarseparator");
+        if (!el) continue;
+        if (row[1]) { el.removeAttribute("data-l10n-id"); el.setAttribute("label", row[1]); }
+      }
+      used.add(el);
+      el.removeAttribute("hidden");
+      body.insertBefore(el, last ? last.nextSibling : body.firstChild);
+      last = el;
+    }
+    for (const e of items) if (!used.has(e)) e.setAttribute("hidden", "true");
+    // The account and sync banner, wherever it is.
+    for (const e of (view?.querySelectorAll("[id*='fxa'], [id*='sync'], .panel-banner-item") || []))
+      if (!used.has(e)) e.setAttribute("hidden", "true");
+  }
+  function trimMenu() {
+    doc.addEventListener("ViewShowing", e => { if (e.target.id === "appMenu-mainView") shapeMenu(); }, true);
+    doc.addEventListener("popupshowing", e => { if (e.target.id === "appMenu-popup") shapeMenu(); }, true);
   }
 
   // ---- start page and search
@@ -163,8 +202,16 @@
     // Our start page shows an empty address, as a new tab should.
     if (window.gInitialPages && !gInitialPages.includes(START)) gInitialPages.push(START);
     try {
-      const search = Services.search ||
-        Cc["@mozilla.org/browser/search-service;1"].getService(Ci.nsISearchService);
+      let search = Services.search;
+      for (const url of ["moz-src:///toolkit/components/search/SearchService.sys.mjs",
+                         "resource://gre/modules/SearchService.sys.mjs"]) {
+        if (search) break;
+        try {
+          const m = ChromeUtils.importESModule(url);
+          search = m.SearchService?.prototype ? null : m.SearchService;
+        } catch (e) {}
+      }
+      if (!search) { log("search engine: left to the policy file"); return; }
       await search.init();
       const ddg = (await search.getVisibleEngines()).find(e => /duckduckgo/i.test(e.name));
       if (ddg && (await search.getDefault())?.name !== ddg.name)
