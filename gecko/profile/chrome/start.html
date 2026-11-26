@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>New tab</title>
+<style>
+:root{
+  --surface:#141414; --raised:#242424; --edge:#5a5a5a; --ghost:#f8f8ff;
+  --sec:rgba(255,255,255,.66); --hint:rgba(255,255,255,.53); --subtle:rgba(255,255,255,.075);
+  --body:"Inter",system-ui,sans-serif; color-scheme:dark;
+}
+html,body{margin:0;min-height:100%;background:var(--surface);color:var(--ghost);font-family:var(--body)}
+.newtab{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:120px;gap:30px}
+.bigsearch{width:560px;height:52px;border-radius:26px;background:var(--raised);border:1px solid var(--edge);display:flex;align-items:center;gap:12px;padding:0 20px;font-size:16px;color:var(--hint)}
+.bigsearch svg{width:18px;height:18px;color:var(--sec);flex:none}
+.bigsearch input{flex:1;min-width:0;border:0;outline:0;background:transparent;padding:0;font:16px var(--body);color:var(--ghost)}
+.bigsearch input::placeholder{color:var(--hint)}
+.engine{font-size:12px;color:var(--hint);margin-top:-18px}
+.lbl{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--hint)}
+.bm{display:grid;grid-template-columns:repeat(8,80px);gap:18px}
+.bmi{display:grid;justify-items:center;gap:8px;font-size:12px;color:var(--sec);text-decoration:none;text-align:center;position:relative;min-width:0}
+.bmi span{max-width:80px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bmi b{position:absolute;top:-6px;right:8px;width:20px;height:20px;border-radius:10px;background:var(--raised);border:1px solid var(--edge);display:none;place-items:center;font-weight:400;font-size:12px;color:var(--sec)}
+.bmi b:hover{color:var(--ghost)}
+a.bmi:hover b{display:grid}
+.bmi.add{cursor:default}
+.bmi.add:hover i,.bmi.add.on i{background:rgba(255,255,255,.125)}
+.bmi i{width:52px;height:52px;border-radius:10px;background:var(--subtle);display:grid;place-items:center;font-style:normal;font-weight:600;font-size:18px;color:var(--ghost)}
+a.bmi:hover i{background:rgba(255,255,255,.125)}
+</style>
+</head>
+<body>
+<div class="newtab">
+  <form class="bigsearch" id="f"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="8" cy="8" r="5.5"/><path d="m12.2 12.2 3.8 3.8"/></svg><input id="q" autofocus spellcheck="false" autocomplete="off" placeholder="Search the web or type an address"></form>
+  <div class="engine" id="eng">Searches with DuckDuckGo, the same as Search's web line</div>
+  <div class="lbl">Bookmarks</div>
+  <div class="bm" id="bm"></div>
+</div>
+<script>
+function toUrl(t){
+  t=t.trim(); if(!t) return null;
+  if(/^[a-z][a-z0-9+.-]*:\/\//i.test(t)||/^(about|chrome|data|view-source):/i.test(t)) return t;
+  if(!/\s/.test(t)&&(/^[^\s\/:]+\.[a-z]{2,}(:\d+)?([\/?#].*)?$/i.test(t)||/^localhost(:\d+)?([\/?#].*)?$/i.test(t)||/^\d{1,3}(\.\d{1,3}){3}(:\d+)?([\/?#].*)?$/.test(t))) return 'https://'+t;
+  return 'https://duckduckgo.com/?q='+encodeURIComponent(t);
+}
+const $=id=>document.getElementById(id);
+// On Firefox the start page keeps its own bookmarks, in this browser's storage.
+const DEFAULTS=[{u:'https://mail.google.com/',t:'Mail'},{u:'https://www.youtube.com/',t:'YouTube'},
+  {u:'https://weather.com/',t:'Weather'},{u:'https://www.netflix.com/',t:'Netflix'},{u:'https://docs.google.com/',t:'Docs'}];
+function load(){try{const v=JSON.parse(localStorage.getItem('ob-bookmarks')||'null');if(Array.isArray(v))return v}catch(e){}return DEFAULTS.slice()}
+function save(){try{localStorage.setItem('ob-bookmarks',JSON.stringify(bookmarks))}catch(e){}}
+function send(o){
+  if(o.c==='bmadd'&&!bookmarks.some(b=>b.u===o.u)){let h=o.u;try{h=new URL(o.u).host.replace(/^www\./,'')}catch(e){}bookmarks.push({u:o.u,t:h})}
+  else if(o.c==='bmdel')bookmarks=bookmarks.filter(b=>b.u!==o.u);
+  else return;
+  save();showBookmarks();
+}
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ENGINE=$('eng').textContent, PLACEHOLDER=$('q').placeholder;
+let bookmarks=load(), adding=false;
+
+function showBookmarks(){
+  $('bm').innerHTML=bookmarks.map(b=>{
+    const name=b.t||b.u;
+    return '<a class="bmi" href="'+esc(b.u)+'" title="'+esc(name)+'"><i>'+esc(name.trim().charAt(0).toUpperCase())+'</i><span>'+esc(name)+'</span><b data-del="'+esc(b.u)+'" title="Remove">×</b></a>';
+  }).join('')+'<div class="bmi add'+(adding?' on':'')+'" id="add"><i>+</i><span>Add</span></div>';
+}
+
+// The Add tile uses the search box: type an address and press Enter to add
+// it; Esc, or clicking Add again, goes back to searching.
+function setAdding(on){
+  adding=on;
+  $('q').placeholder=on?'Type the address of a site to add':PLACEHOLDER;
+  $('eng').textContent=on?'Press Enter to add it to your bookmarks, or Esc to cancel':ENGINE;
+  if(on){$('q').value='';$('q').focus()}
+  showBookmarks();
+}
+
+$('bm').addEventListener('click',e=>{
+  const d=e.target.closest('[data-del]');
+  if(d){e.preventDefault();send({c:'bmdel',u:d.dataset.del});return}
+  if(e.target.closest('#add')) setAdding(!adding);
+});
+$('q').addEventListener('keydown',e=>{if(e.key==='Escape'&&adding)setAdding(false)});
+$('f').addEventListener('submit',e=>{
+  e.preventDefault();
+  const t=$('q').value.trim();
+  if(adding){
+    const u=toUrl(t);
+    if(!u||u.startsWith('https://duckduckgo.com/?q=')){$('eng').textContent='That does not look like an address. Try one like example.com';return}
+    send({c:'bmadd',u:new URL(u).href});
+    $('q').value='';
+    setAdding(false);
+    return;
+  }
+  const u=toUrl(t); if(u) location.href=u;
+});
+showBookmarks();
+</script>
+</body>
+</html>

@@ -1,0 +1,229 @@
+/* Output Browser on Firefox: the look of the approved mock-up (Box in a box),
+   drawn on Firefox's own frame. Colours and sizes are the mock-up's. */
+
+:root {
+  --ob-chrome: #1c1c1c;
+  --ob-surface: #141414;
+  --ob-raised: #242424;
+  --ob-divider: #333333;
+  --ob-ghost: #f8f8ff;
+  --ob-sec: rgba(255,255,255,.66);
+  --ob-hint: rgba(255,255,255,.53);
+  --ob-subtle: rgba(255,255,255,.075);
+  --ob-hover: rgba(255,255,255,.125);
+  --ob-sel: rgba(255,255,255,.24);
+
+  --toolbox-bgcolor: var(--ob-chrome) !important;
+  --toolbox-bgcolor-inactive: var(--ob-chrome) !important;
+  --toolbar-bgcolor: var(--ob-chrome) !important;
+  --toolbar-color: var(--ob-ghost) !important;
+  --lwt-accent-color: var(--ob-chrome) !important;
+  --lwt-accent-color-inactive: var(--ob-chrome) !important;
+  --toolbar-field-background-color: var(--ob-raised) !important;
+  --toolbar-field-focus-background-color: var(--ob-raised) !important;
+  --toolbar-field-color: var(--ob-ghost) !important;
+  --toolbar-field-focus-color: var(--ob-ghost) !important;
+  --toolbarbutton-border-radius: 16px !important;
+  --toolbarbutton-hover-background: var(--ob-subtle) !important;
+  --toolbarbutton-active-background: var(--ob-hover) !important;
+  --arrowpanel-background: #1a1a1a !important;
+  --arrowpanel-color: var(--ob-ghost) !important;
+  --arrowpanel-border-color: var(--ob-divider) !important;
+  --arrowpanel-border-radius: 12px !important;
+  --panel-separator-color: var(--ob-divider) !important;
+  --tab-selected-bgcolor: var(--ob-surface) !important;
+  --tab-border-radius: 10px !important;
+  --tab-min-height: 30px !important;
+  --focus-outline-color: rgba(255,255,255,.3) !important;
+}
+
+/* ---- the frame: one row, then the folding strip, then the page box */
+#navigator-toolbox {
+  background: var(--ob-chrome) !important;
+  border-bottom: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+#nav-bar {
+  order: -1 !important;
+  background: var(--ob-chrome) !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  min-height: 44px !important;
+  padding: 0 8px !important;
+  -moz-window-dragging: drag;
+}
+#nav-bar toolbarbutton, #nav-bar toolbaritem, #urlbar-container, #star-button-box,
+#ob-tabs, .titlebar-buttonbox-container {
+  -moz-window-dragging: no-drag;
+}
+#titlebar { order: 1 !important; }
+#PersonalToolbar, #toolbar-menubar:not([autohide="false"]) { display: none !important; }
+
+/* The tab strip folds down under the row only when the tab button is on. */
+#navigator-toolbox:not([ob-folded]) #titlebar { display: none !important; }
+#TabsToolbar {
+  background: var(--ob-chrome) !important;
+  padding: 0 8px 8px !important;
+  -moz-window-dragging: drag;
+}
+#TabsToolbar .titlebar-spacer,
+#TabsToolbar .titlebar-buttonbox-container,
+#firefox-view-button, #alltabs-button, #tabs-newtab-button ~ toolbarbutton,
+.tab-secondary-label, .tab-icon-overlay { display: none !important; }
+#TabsToolbar-customization-target { min-height: 40px !important; align-items: center !important; }
+#tabbrowser-tabs { border: 0 !important; padding: 0 !important; margin: 0 !important; }
+.tabbrowser-tab {
+  min-height: 30px !important;
+  max-width: 210px !important;
+  padding: 0 3px !important;
+  -moz-window-dragging: no-drag;
+}
+.tabbrowser-tab:first-of-type { padding-inline-start: 0 !important; }
+.tab-background {
+  margin-block: 0 !important;
+  min-height: 30px !important;
+  border-radius: 10px !important;
+  background: rgba(255,255,255,.06) !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+.tabbrowser-tab[selected] .tab-background,
+.tabbrowser-tab[multiselected] .tab-background { background: var(--ob-surface) !important; }
+.tab-content { padding: 0 8px 0 10px !important; font-size: 12px !important; color: var(--ob-sec); }
+.tabbrowser-tab[selected] .tab-content { color: var(--ob-ghost); }
+.tab-icon-image { width: 12px !important; height: 12px !important; border-radius: 3px; }
+.tab-close-button { width: 18px !important; height: 18px !important; padding: 4px !important; opacity: .6; }
+.tab-close-button:hover { opacity: 1; background: none !important; }
+#tabs-newtab-button .toolbarbutton-icon {
+  width: 30px !important; height: 30px !important; padding: 7px !important;
+  border-radius: 10px !important; background: rgba(255,255,255,.06) !important;
+}
+
+/* The page sits in a rounded box on the window's own frame. */
+#browser, #tabbrowser-tabbox { background: var(--ob-chrome) !important; }
+#tabbrowser-tabbox {
+  margin: 0 8px 8px !important;
+  border-radius: 10px !important;
+  overflow: clip !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+#tabbrowser-tabpanels, .browserStack, browser[type="content"] { background: var(--ob-surface) !important; }
+:root[inFullscreen] #tabbrowser-tabbox, :root[inDOMFullscreen] #tabbrowser-tabbox,
+:root[sizemode="fullscreen"] #tabbrowser-tabbox { margin: 0 !important; border-radius: 0 !important; }
+#sidebar-box, #sidebar-main, #sidebar-splitter { display: none !important; }
+
+/* ---- the row's buttons: round, 32 px */
+#nav-bar :is(#back-button, #forward-button, #reload-button, #stop-button, #PanelUI-menu-button)
+  > .toolbarbutton-icon {
+  width: 32px !important; height: 32px !important; padding: 8px !important; border-radius: 16px !important;
+}
+#nav-bar toolbarbutton[disabled] > .toolbarbutton-icon { opacity: .35 !important; }
+
+/* ⋯ for the menu */
+#PanelUI-menu-button .toolbarbutton-icon {
+  list-style-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='context-fill'%3E%3Ccircle cx='3' cy='8' r='1.4'/%3E%3Ccircle cx='8' cy='8' r='1.4'/%3E%3Ccircle cx='13' cy='8' r='1.4'/%3E%3C/svg%3E") !important;
+  -moz-context-properties: fill; fill: currentColor;
+}
+#PanelUI-menu-button[open] > .toolbarbutton-icon { background: var(--ob-hover) !important; }
+#PanelUI-menu-button .toolbarbutton-badge-stack { padding: 0 !important; }
+
+/* ---- the address: a 32 px pill, with the extensions at its right end */
+#urlbar-container { margin-inline: 2px 0 !important; padding: 0 !important; }
+#urlbar { --urlbar-min-height: 32px !important; font-size: 13px !important; }
+#urlbar-background {
+  background: var(--ob-raised) !important;
+  border: 0 !important;
+  border-radius: 16px 0 0 16px !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+#urlbar[open] #urlbar-background { border-radius: 16px !important; }
+#urlbar-input-container { padding-inline: 10px 4px !important; }
+#tracking-protection-icon-container, #page-action-buttons > :not(#urlbar-zoom-button),
+#identity-icon-label, #urlbar-label-box, #urlbar-search-mode-indicator { display: none !important; }
+
+#nav-bar :is(.unified-extensions-item, #unified-extensions-button) {
+  background: var(--ob-raised) !important;
+  margin: 0 !important;
+  padding: 4px 2px !important;
+  height: 32px !important;
+  align-items: center !important;
+  border-radius: 0 !important;
+}
+#nav-bar .unified-extensions-item .unified-extensions-item-action-button { padding: 0 !important; margin: 0 !important; }
+#nav-bar :is(.unified-extensions-item, #unified-extensions-button) :is(.toolbarbutton-badge-stack, .toolbarbutton-icon) {
+  width: 24px !important; height: 24px !important; padding: 3px !important; border-radius: 12px !important;
+}
+#unified-extensions-button { border-radius: 0 16px 16px 0 !important; padding-inline: 2px 6px !important; }
+#unified-extensions-button .toolbarbutton-icon { fill: var(--ob-sec) !important; }
+
+/* the star, after the address */
+#star-button-box.ob-star {
+  width: 32px; height: 32px; border-radius: 16px; margin-inline: 4px 0 !important;
+  display: flex !important; align-items: center; justify-content: center;
+}
+#star-button-box.ob-star:hover { background: var(--ob-subtle) !important; }
+#star-button-box.ob-star > #star-button { width: 16px !important; height: 16px !important; }
+
+/* the tab button: a small stack of cards and the number of tabs */
+#ob-tabs {
+  display: flex !important; align-items: center; gap: 6px;
+  height: 32px; padding: 0 10px 0 8px !important; margin-inline: 2px !important;
+  border-radius: 16px !important; color: var(--ob-ghost) !important;
+  font-size: 12px !important; font-weight: 600 !important; appearance: none !important;
+}
+#ob-tabs:hover { background: var(--ob-subtle) !important; }
+#ob-tabs[checked] { background: var(--ob-sel) !important; }
+#ob-tabs .ob-stack { width: 18px; height: 14px; position: relative; }
+#ob-tabs .ob-stack i {
+  position: absolute; inset: 0; border: 1.5px solid var(--ob-ghost); border-radius: 3px;
+  background: var(--ob-chrome);
+}
+#ob-tabs .ob-stack i:nth-child(1) { transform: translate(-3px, 3px); opacity: .5; }
+#ob-tabs .ob-stack i:nth-child(2) { transform: translate(-1.5px, 1.5px); opacity: .75; }
+#ob-count { margin: 0 !important; }
+
+/* ---- window buttons, in the row, on the side the desktop setting puts them */
+.ob-wins { display: flex !important; align-items: center; padding-inline-start: 4px; }
+.ob-wins::before {
+  content: ""; width: 1px; height: 20px; background: var(--ob-divider); margin-inline: 2px 4px;
+}
+@media (-moz-gtk-csd-reversed-placement) {
+  #nav-bar > .ob-wins { order: -1; padding-inline: 0 4px; flex-direction: row-reverse; }
+  #nav-bar > .ob-wins::before { margin-inline: 4px 2px; }
+}
+.ob-wins .titlebar-button {
+  appearance: none !important;
+  width: 32px !important; height: 32px !important; padding: 8px !important; margin: 0 !important;
+  border-radius: 16px !important; background: none !important; color: var(--ob-sec) !important;
+}
+.ob-wins .titlebar-button:hover { background: var(--ob-subtle) !important; color: var(--ob-ghost) !important; }
+.ob-wins .titlebar-button > .toolbarbutton-icon {
+  appearance: none !important; width: 16px !important; height: 16px !important;
+  -moz-context-properties: stroke; stroke: currentColor;
+}
+.ob-wins .titlebar-min > .toolbarbutton-icon {
+  list-style-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='context-stroke' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath d='M4 8h8'/%3E%3C/svg%3E") !important;
+}
+.ob-wins .titlebar-max > .toolbarbutton-icon {
+  list-style-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='context-stroke' stroke-width='1.5'%3E%3Crect x='4' y='4' width='8' height='8' rx='1.5'/%3E%3C/svg%3E") !important;
+}
+.ob-wins .titlebar-restore > .toolbarbutton-icon {
+  list-style-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='context-stroke' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='6' width='6' height='6' rx='1.2'/%3E%3Cpath d='M6.5 4H11a1 1 0 0 1 1 1v4.5'/%3E%3C/svg%3E") !important;
+}
+.ob-wins .titlebar-close > .toolbarbutton-icon {
+  list-style-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='context-stroke' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath d='m4.5 4.5 7 7m0-7-7 7'/%3E%3C/svg%3E") !important;
+}
+
+/* ---- the menu and the other pop-overs: Shuffle's note style */
+#appMenu-popup, #unified-extensions-panel, #editBookmarkPanel, #downloadsPanel {
+  --panel-background: #1a1a1a !important;
+  --panel-border-color: var(--ob-divider) !important;
+  --panel-border-radius: 12px !important;
+}
+#appMenu-popup .subviewbutton, #unified-extensions-panel .subviewbutton {
+  min-height: 32px !important; border-radius: 10px !important; font-size: 13px !important;
+}
+#appMenu-popup toolbarseparator { margin: 4px 8px !important; }
