@@ -54,11 +54,22 @@
     const menu = doc.getElementById("PanelUI-button");
 
     // The star moves out of the address, to after it, as in the mock-up.
-    const star = doc.getElementById("star-button-box");
-    if (star && menu) {
-      star.classList.add("ob-star");
-      nav.insertBefore(star, menu);
-    }
+    // Firefox may add it to the address a moment later, so look again.
+    const moveStar = (tries) => {
+      const btn = doc.getElementById("star-button");
+      const star = doc.getElementById("star-button-box") || btn?.parentNode;
+      if (star && star.parentNode !== nav) {
+        star.classList.add("ob-star");
+        star.removeAttribute("hidden");
+        nav.insertBefore(star, doc.getElementById("ob-tabs") || menu);
+        log("star moved");
+      } else if (!star && tries > 0) {
+        setTimeout(() => moveStar(tries - 1), 500);
+      } else if (!star) {
+        log("no star found");
+      }
+    };
+    moveStar(10);
 
     // The tab button, with the number of tabs.
     if (!doc.getElementById("ob-tabs")) {
@@ -98,6 +109,12 @@
           CustomizableUI.moveWidgetWithinArea(id, u.position);
       },
     });
+  }
+
+  // The address's placeholder, as in the mock-up.
+  function placeholder() {
+    const input = doc.getElementById("urlbar-input") || gURLBar?.inputField;
+    if (input) input.setAttribute("placeholder", "Search or type an address");
   }
 
   // ---- the tab strip
@@ -146,10 +163,13 @@
     // Our start page shows an empty address, as a new tab should.
     if (window.gInitialPages && !gInitialPages.includes(START)) gInitialPages.push(START);
     try {
-      await Services.search.init();
-      const ddg = (await Services.search.getVisibleEngines()).find(e => /duckduckgo/i.test(e.name));
-      if (ddg && (await Services.search.getDefault())?.name !== ddg.name)
-        await Services.search.setDefault(ddg, Ci.nsISearchService.CHANGE_REASON_USER);
+      const search = Services.search ||
+        Cc["@mozilla.org/browser/search-service;1"].getService(Ci.nsISearchService);
+      await search.init();
+      const ddg = (await search.getVisibleEngines()).find(e => /duckduckgo/i.test(e.name));
+      if (ddg && (await search.getDefault())?.name !== ddg.name)
+        await search.setDefault(ddg, Ci.nsISearchService.CHANGE_REASON_USER);
+      log("search engine: " + (await search.getDefault())?.name);
     } catch (e) { log("search engine: " + e); }
   }
 
@@ -157,7 +177,20 @@
     try { buildRow(); } catch (e) { log("row: " + e); }
     try { keepExtensionsInPlace(); } catch (e) { log("extensions: " + e); }
     try { trimMenu(); } catch (e) { log("menu: " + e); }
-    startPageAndSearch();
+    startPageAndSearch().then(() => setTimeout(placeholder, 300));
+    placeholder();
+    // For the self-check: say when the menu opens and closes.
+    doc.addEventListener("popupshown", e => {
+      if (e.target.id === "appMenu-popup" || e.target.id === "unified-extensions-panel") {
+        const r = e.target.getBoundingClientRect();
+        log(e.target.id + " shown at " + Math.round(r.x) + "," + Math.round(r.y) + " size " +
+            Math.round(r.width) + "x" + Math.round(r.height));
+      }
+    }, true);
+    doc.addEventListener("popuphidden", e => {
+      if (e.target.id === "appMenu-popup" || e.target.id === "unified-extensions-panel")
+        log(e.target.id + " hidden");
+    }, true);
     updateCount();
     for (const ev of ["TabOpen", "TabClose", "TabShow", "TabHide"])
       gBrowser.tabContainer.addEventListener(ev, () => setTimeout(updateCount, 0));
