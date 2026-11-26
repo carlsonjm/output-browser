@@ -109,6 +109,16 @@
     if (!puzzle || !strip) { log("no puzzle or strip"); return; }
     if (puzzle.parentNode !== strip || strip.lastElementChild !== puzzle) strip.appendChild(puzzle);
     puzzle.removeAttribute("hidden");
+    // Firefox opens the add-ons page instead of the list when every extension
+    // is shown outside it. The puzzle always opens the list, as in the mock-up.
+    const ue = window.gUnifiedExtensions;
+    if (ue && typeof ue.hasExtensionsInPanel === "function" && !ue.obAlwaysPanel) {
+      ue.obAlwaysPanel = true;
+      ue.hasExtensionsInPanel = () => true;
+      log("puzzle always opens the list");
+    } else if (!ue || typeof ue.hasExtensionsInPanel !== "function") {
+      log("puzzle: no hasExtensionsInPanel (" + (ue ? Object.keys(Object.getPrototypeOf(ue) || ue).join(",") : "none") + ")");
+    }
     log("extensions in the strip: " +
         CustomizableUI.getWidgetIdsInArea("TabsToolbar").filter(id => id.endsWith("-browser-action")).length);
   }
