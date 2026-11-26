@@ -137,7 +137,11 @@
   height: 32px !important; align-self: center !important;
   background: var(--ob-raised) !important; border-radius: 16px 0 0 16px !important;
 }
-#urlbar:not([open]) > :is(#urlbar-background, .urlbar-background) { background: transparent !important; }
+#urlbar:not([open]) { --toolbar-field-border-color: transparent !important; --toolbar-field-focus-border-color: transparent !important; }
+#urlbar:not([open]), #urlbar:not([open]) :is(#urlbar-background, .urlbar-background) {
+  background: transparent !important; border-color: transparent !important;
+  box-shadow: none !important; outline: none !important;
+}
 #urlbar { --urlbar-min-height: 32px !important; font-size: 13px !important; }
 #urlbar-background {
   background: var(--ob-raised) !important;
@@ -165,7 +169,7 @@
 #nav-bar :is(.unified-extensions-item, #unified-extensions-button) :is(.toolbarbutton-badge-stack, .toolbarbutton-icon) {
   width: 24px !important; height: 24px !important; padding: 3px !important; border-radius: 12px !important;
 }
-#unified-extensions-button { border-radius: 0 16px 16px 0 !important; padding-inline: 2px 6px !important; }
+#nav-bar #unified-extensions-button { border-radius: 0 16px 16px 0 !important; padding-inline: 2px 6px !important; }
 #unified-extensions-button .toolbarbutton-icon {
   list-style-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23c8c8c8' stroke-width='1.5' stroke-linejoin='round'%3E%3Cpath d='M3 5h3V4a1.5 1.5 0 0 1 3 0v1h3v3h-1a1.5 1.5 0 0 0 0 3h1v3H3v-3h1a1.5 1.5 0 0 0 0-3H3z'/%3E%3C/svg%3E") !important;
   -moz-context-properties: stroke; stroke: var(--ob-sec) !important; padding: 5px !important;
@@ -240,8 +244,10 @@
 #appMenu-popup .subviewbutton, #unified-extensions-panel .subviewbutton {
   min-height: 32px !important; border-radius: 10px !important; font-size: 13px !important;
 }
-#appMenu-popup toolbarseparator {
-  margin: 4px 8px !important;
-  border: 0 !important; border-image: none !important;
-  border-top: 1px solid var(--ob-divider) !important; background: none !important;
+/* Firefox's own separators are hidden; a group's first row draws the line. */
+#appMenu-mainView toolbarseparator { display: none !important; }
+#appMenu-mainView [ob-group] { margin-top: 9px !important; position: relative; overflow: visible !important; }
+#appMenu-mainView [ob-group]::before {
+  content: ""; position: absolute; inset-inline: 0; top: -5px; height: 1px;
+  background: var(--ob-divider);
 }

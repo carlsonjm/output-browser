@@ -154,7 +154,7 @@
     "-",
     [/settings|preferences/, "Browser settings"],
   ];
-  let menuLogged = false;
+  let menuLogged = false, menuShownLogged = false;
   function shapeMenu() {
     const view = doc.getElementById("appMenu-mainView");
     const body = view?.querySelector(".panel-subview-body") || view;
@@ -162,22 +162,15 @@
     const items = [...body.children];
     if (!menuLogged) { menuLogged = true; log("menu rows: " + items.map(e => e.id || e.localName).join(" ")); }
     const used = new Set();
-    let last = null;
-    const sepFor = () => {
-      let sep = items.find(e => e.localName === "toolbarseparator" && !e.id && !used.has(e));
-      if (!sep) { sep = doc.createXULElement("toolbarseparator"); }
-      used.add(sep);
-      return sep;
-    };
+    let last = null, group = false;
     for (const row of MENU) {
-      let el;
-      if (row === "-") el = sepFor();
-      else {
-        el = items.find(e => !used.has(e) && e.id && row[0].test(e.id) &&
-                             e.localName !== "toolbarseparator");
-        if (!el) continue;
-        if (row[1]) { el.removeAttribute("data-l10n-id"); el.setAttribute("label", row[1]); }
-      }
+      if (row === "-") { group = true; continue; }
+      const el = items.find(e => !used.has(e) && e.id && row[0].test(e.id) &&
+                                 e.localName !== "toolbarseparator");
+      if (!el) continue;
+      if (row[1]) { el.removeAttribute("data-l10n-id"); el.setAttribute("label", row[1]); }
+      el.toggleAttribute("ob-group", group && last !== null);
+      group = false;
       used.add(el);
       el.removeAttribute("hidden");
       body.insertBefore(el, last ? last.nextSibling : body.firstChild);
@@ -187,6 +180,15 @@
     // The account and sync banner, wherever it is.
     for (const e of (view?.querySelectorAll("[id*='fxa'], [id*='sync'], .panel-banner-item") || []))
       if (!used.has(e)) e.setAttribute("hidden", "true");
+    // For the self-check: anything still drawn in the menu, and its lines.
+    if (!menuShownLogged) {
+      menuShownLogged = true;
+      setTimeout(() => {
+        const shown = [...view.querySelectorAll("*")].filter(e => e.getBoundingClientRect().height > 0 &&
+          e.parentNode === body);
+        log("menu shown: " + shown.map(e => (e.id || e.localName) + (e.hasAttribute("ob-group") ? "^" : "")).join(" "));
+      }, 400);
+    }
   }
   function trimMenu() {
     doc.addEventListener("ViewShowing", e => { if (e.target.id === "appMenu-mainView") shapeMenu(); }, true);
