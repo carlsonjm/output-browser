@@ -10,12 +10,17 @@ try {
       win.addEventListener("DOMContentLoaded", () => {
         if (win.location.href !== "chrome://browser/content/browser.xhtml") return;
         try {
+          // Firefox only loads code into its windows from its own kinds of
+          // address, so the profile's chrome folder is given one:
+          // resource://outputbrowser/.
           const dir = svc("@mozilla.org/file/directory_service;1", Ci.nsIProperties)
                         .get("UChrm", Ci.nsIFile);
-          dir.append("output.uc.js");
           const io = svc("@mozilla.org/network/io-service;1", Ci.nsIIOService);
+          const res = io.getProtocolHandler("resource").QueryInterface(Ci.nsIResProtocolHandler);
+          if (!res.hasSubstitution("outputbrowser"))
+            res.setSubstitution("outputbrowser", io.newFileURI(dir));
           const loader = svc("@mozilla.org/moz/jssubscript-loader;1", Ci.mozIJSSubScriptLoader);
-          loader.loadSubScript(io.newFileURI(dir).spec, win);
+          loader.loadSubScript("resource://outputbrowser/output.uc.js", win);
         } catch (e) { Cu.reportError(e); }
       }, { once: true });
     }
