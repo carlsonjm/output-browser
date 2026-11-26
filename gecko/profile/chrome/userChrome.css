@@ -323,3 +323,13 @@
   :is(.panel-header + toolbarseparator, .panel-subview-body + toolbarseparator ~ toolbarseparator) { display: none !important; }
 #unified-extensions-view:not(:has(.unified-extensions-list .unified-extensions-item:not([hidden]), #unified-extensions-area > :not([hidden])))
   .panel-subview-body { min-height: 0 !important; padding-block: 0 !important; }
+
+/* An extension's icon sits inside its 32 px circle, centred, at 16 px. */
+#TabsToolbar .unified-extensions-item .toolbarbutton-badge-stack {
+  display: grid !important; place-items: center !important; box-sizing: border-box !important;
+}
+#TabsToolbar .unified-extensions-item .toolbarbutton-badge-stack > .toolbarbutton-icon {
+  width: 16px !important; height: 16px !important; padding: 0 !important; margin: 0 !important;
+  border-radius: 0 !important; background: transparent !important; grid-area: 1 / 1;
+}
+#TabsToolbar .unified-extensions-item .toolbarbutton-badge-stack > .toolbarbutton-badge { grid-area: 1 / 1; align-self: end; justify-self: end; }
