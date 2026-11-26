@@ -32,14 +32,16 @@
     const target = doc.getElementById("nav-bar-customization-target");
     if (!nav || !target) { log("no nav-bar"); return; }
 
-    // Back, forward, reload and the address, then any extensions shown in
-    // the row and the extensions button, so they sit at the address's end.
+    // Extensions shown in the row go to the tab strip's right end first, so
+    // the clean-up below doesn't unpin them. Then the row keeps back, forward,
+    // reload and the address, and nothing else Firefox put there.
     try {
-      const exts = CustomizableUI.getWidgetIdsInArea("nav-bar").filter(id => id.endsWith("-browser-action"));
-      const want = ["back-button", "forward-button", "stop-reload-button", "urlbar-container",
-                    ...exts, "unified-extensions-button"];
+      const isExt = id => id.endsWith("-browser-action");
+      for (const id of CustomizableUI.getWidgetIdsInArea("nav-bar").filter(isExt))
+        CustomizableUI.addWidgetToArea(id, "TabsToolbar");
+      const want = ["back-button", "forward-button", "stop-reload-button", "urlbar-container"];
       for (const id of CustomizableUI.getWidgetIdsInArea("nav-bar")) {
-        if (want.includes(id)) continue;
+        if (want.includes(id) || id === "unified-extensions-button") continue;
         try { CustomizableUI.removeWidgetFromArea(id); } catch (e) {}
       }
       want.forEach((id, i) => {
@@ -50,6 +52,7 @@
         } catch (e) { log("place " + id + ": " + e); }
       });
     } catch (e) { log("placements: " + e); }
+    placePuzzle();
 
     const menu = doc.getElementById("PanelUI-button");
 
@@ -98,15 +101,28 @@
     log("row ready");
   }
 
-  // An extension shown in the row later still goes at the address's end.
+  // The puzzle (every extension) goes last in the tab strip, after the
+  // extensions shown there.
+  function placePuzzle() {
+    const puzzle = doc.getElementById("unified-extensions-button");
+    const strip = doc.getElementById("TabsToolbar");
+    if (!puzzle || !strip) { log("no puzzle or strip"); return; }
+    if (puzzle.parentNode !== strip || strip.lastElementChild !== puzzle) strip.appendChild(puzzle);
+    puzzle.removeAttribute("hidden");
+    log("extensions in the strip: " +
+        CustomizableUI.getWidgetIdsInArea("TabsToolbar").filter(id => id.endsWith("-browser-action")).length);
+  }
+
+  // An extension shown later (a new install, or Show in the list) goes to the
+  // strip too, never the address.
   function keepExtensionsInPlace() {
     CustomizableUI.addListener({
       onWidgetAdded(id, area) {
         if (area !== "nav-bar" || !id.endsWith("-browser-action")) return;
-        const u = CustomizableUI.getPlacementOfWidget("unified-extensions-button");
-        const p = CustomizableUI.getPlacementOfWidget(id);
-        if (u && p && u.area === "nav-bar" && p.position > u.position)
-          CustomizableUI.moveWidgetWithinArea(id, u.position);
+        setTimeout(() => {
+          try { CustomizableUI.addWidgetToArea(id, "TabsToolbar"); placePuzzle(); }
+          catch (e) { log("move " + id + ": " + e); }
+        }, 0);
       },
     });
   }

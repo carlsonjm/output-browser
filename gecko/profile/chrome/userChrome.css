@@ -135,7 +135,7 @@
 #urlbar-container {
   margin-inline: 2px 0 !important; padding: 0 !important;
   height: 32px !important; align-self: center !important;
-  background: var(--ob-raised) !important; border-radius: 16px 0 0 16px !important;
+  background: var(--ob-raised) !important; border-radius: 16px !important;
 }
 #urlbar:not([open]) { --toolbar-field-border-color: transparent !important; --toolbar-field-focus-border-color: transparent !important; }
 #urlbar:not([open]), #urlbar:not([open]) :is(#urlbar-background, .urlbar-background) {
@@ -146,7 +146,7 @@
 #urlbar-background {
   background: var(--ob-raised) !important;
   border: 0 !important;
-  border-radius: 16px 0 0 16px !important;
+  border-radius: 16px !important;
   box-shadow: none !important;
   outline: none !important;
 }
@@ -156,23 +156,26 @@
 #identity-icon-label, #urlbar-label-box, #urlbar-search-mode-indicator,
 #urlbar-searchmode-switcher, .searchmode-switcher, #searchmode-switcher-chicklet { display: none !important; }
 
-#nav-bar :is(.unified-extensions-item, #unified-extensions-button) {
-  background: var(--ob-raised) !important;
+/* Extensions live at the right end of the tab strip: the shown ones, then the
+   puzzle with the full list. The address ends clear, for voice. */
+#TabsToolbar > #unified-extensions-button { margin-inline-start: 4px !important; }
+:is(#nav-bar, #TabsToolbar) :is(.unified-extensions-item, #unified-extensions-button) {
+  background: transparent !important;
   margin: 0 !important;
-  padding: 4px 2px !important;
+  padding: 2px !important;
   height: 32px !important;
   align-items: center !important;
   align-self: center !important;
   border-radius: 0 !important;
 }
-#nav-bar .unified-extensions-item .unified-extensions-item-action-button { padding: 0 !important; margin: 0 !important; }
-#nav-bar :is(.unified-extensions-item, #unified-extensions-button) :is(.toolbarbutton-badge-stack, .toolbarbutton-icon) {
-  width: 24px !important; height: 24px !important; padding: 3px !important; border-radius: 12px !important;
+#TabsToolbar .unified-extensions-item .unified-extensions-item-action-button { padding: 0 !important; margin: 0 !important; }
+:is(#nav-bar, #TabsToolbar) :is(.unified-extensions-item, #unified-extensions-button) :is(.toolbarbutton-badge-stack, .toolbarbutton-icon) {
+  width: 28px !important; height: 28px !important; padding: 6px !important; border-radius: 14px !important;
 }
-#nav-bar #unified-extensions-button { border-radius: 0 16px 16px 0 !important; padding-inline: 2px 6px !important; }
+#TabsToolbar #unified-extensions-button { border-radius: 16px !important; }
 #unified-extensions-button .toolbarbutton-icon {
   list-style-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23c8c8c8' stroke-width='1.5' stroke-linejoin='round'%3E%3Cpath d='M3 5h3V4a1.5 1.5 0 0 1 3 0v1h3v3h-1a1.5 1.5 0 0 0 0 3h1v3H3v-3h1a1.5 1.5 0 0 0 0-3H3z'/%3E%3C/svg%3E") !important;
-  -moz-context-properties: stroke; stroke: var(--ob-sec) !important; padding: 5px !important;
+  -moz-context-properties: stroke; stroke: var(--ob-sec) !important;
 }
 #unified-extensions-button[open] .toolbarbutton-icon { background: var(--ob-sel) !important; stroke: var(--ob-ghost) !important; }
 
@@ -252,16 +255,16 @@
   background: var(--ob-divider);
 }
 
-/* An extension's button in the address pill: the same round highlight as the
-   puzzle, drawn on the icon, never Firefox's own square or larger circle. */
-#nav-bar .unified-extensions-item :is(.unified-extensions-item-action-button, .toolbarbutton-1) {
+/* An extension's button: the same round highlight as the puzzle, drawn on the
+   icon, never Firefox's own square or larger circle. */
+#TabsToolbar .unified-extensions-item :is(.unified-extensions-item-action-button, .toolbarbutton-1) {
   background: transparent !important; box-shadow: none !important;
 }
-#nav-bar .unified-extensions-item :is(.unified-extensions-item-action-button, .toolbarbutton-1) > .toolbarbutton-badge-stack {
+#TabsToolbar .unified-extensions-item :is(.unified-extensions-item-action-button, .toolbarbutton-1) > .toolbarbutton-badge-stack {
   background: transparent !important; box-shadow: none !important; outline: none !important;
 }
-#nav-bar .unified-extensions-item :is(.unified-extensions-item-action-button, .toolbarbutton-1):hover > .toolbarbutton-badge-stack,
-#nav-bar #unified-extensions-button:hover .toolbarbutton-icon { background: var(--ob-hover) !important; }
-#nav-bar .unified-extensions-item :is(.unified-extensions-item-action-button, .toolbarbutton-1):is([open], [checked], :active) > .toolbarbutton-badge-stack {
+#TabsToolbar .unified-extensions-item :is(.unified-extensions-item-action-button, .toolbarbutton-1):hover > .toolbarbutton-badge-stack,
+#TabsToolbar #unified-extensions-button:hover .toolbarbutton-icon { background: var(--ob-hover) !important; }
+#TabsToolbar .unified-extensions-item :is(.unified-extensions-item-action-button, .toolbarbutton-1):is([open], [checked], :active) > .toolbarbutton-badge-stack {
   background: var(--ob-sel) !important;
 }
