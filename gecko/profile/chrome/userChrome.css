@@ -180,7 +180,10 @@
 
 /* the star, after the address */
 #star-button-box.ob-star {
-  width: 32px; height: 32px; border-radius: 16px; margin-inline: 4px 0 !important;
+  box-sizing: border-box !important; padding: 0 !important; margin-block: 0 !important;
+  width: 32px !important; height: 32px !important; min-width: 32px !important; min-height: 32px !important;
+  max-width: 32px !important; max-height: 32px !important;
+  border-radius: 16px !important; margin-inline: 4px 0 !important;
   display: flex !important; align-items: center; justify-content: center;
   align-self: center !important;
 }
