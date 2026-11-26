@@ -317,3 +317,9 @@
 #TabsToolbar #unified-extensions-button:is([open], :active) > .toolbarbutton-icon {
   background: var(--ob-sel) !important;
 }
+
+/* The extensions list with nothing in it: one line under the title, not two. */
+#unified-extensions-view:not(:has(.unified-extensions-list .unified-extensions-item:not([hidden]), #unified-extensions-area > :not([hidden])))
+  :is(.panel-header + toolbarseparator, .panel-subview-body + toolbarseparator ~ toolbarseparator) { display: none !important; }
+#unified-extensions-view:not(:has(.unified-extensions-list .unified-extensions-item:not([hidden]), #unified-extensions-area > :not([hidden])))
+  .panel-subview-body { min-height: 0 !important; padding-block: 0 !important; }
