@@ -130,7 +130,14 @@
 #PanelUI-menu-button .toolbarbutton-badge-stack { padding: 0 !important; }
 
 /* ---- the address: a 32 px pill, with the extensions at its right end */
-#urlbar-container { margin-inline: 2px 0 !important; padding: 0 !important; }
+/* The pill is drawn on the address's container, so it joins the extension
+   buttons after it. Firefox's own background only shows for the results. */
+#urlbar-container {
+  margin-inline: 2px 0 !important; padding: 0 !important;
+  height: 32px !important; align-self: center !important;
+  background: var(--ob-raised) !important; border-radius: 16px 0 0 16px !important;
+}
+#urlbar:not([open]) > :is(#urlbar-background, .urlbar-background) { background: transparent !important; }
 #urlbar { --urlbar-min-height: 32px !important; font-size: 13px !important; }
 #urlbar-background {
   background: var(--ob-raised) !important;
@@ -151,6 +158,7 @@
   padding: 4px 2px !important;
   height: 32px !important;
   align-items: center !important;
+  align-self: center !important;
   border-radius: 0 !important;
 }
 #nav-bar .unified-extensions-item .unified-extensions-item-action-button { padding: 0 !important; margin: 0 !important; }
@@ -168,6 +176,7 @@
 #star-button-box.ob-star {
   width: 32px; height: 32px; border-radius: 16px; margin-inline: 4px 0 !important;
   display: flex !important; align-items: center; justify-content: center;
+  align-self: center !important;
 }
 #star-button-box.ob-star:hover { background: var(--ob-subtle) !important; }
 #star-button-box.ob-star > #star-button { width: 16px !important; height: 16px !important; }
@@ -175,7 +184,7 @@
 /* the tab button: a small stack of cards and the number of tabs */
 #ob-tabs {
   display: flex !important; align-items: center; gap: 6px;
-  height: 32px; padding: 0 10px 0 8px !important; margin-inline: 2px !important;
+  height: 32px; padding: 0 10px 0 8px !important; margin-inline: 2px !important; align-self: center !important;
   border-radius: 16px !important; color: var(--ob-ghost) !important;
   font-size: 12px !important; font-weight: 600 !important; appearance: none !important;
 }
@@ -231,4 +240,8 @@
 #appMenu-popup .subviewbutton, #unified-extensions-panel .subviewbutton {
   min-height: 32px !important; border-radius: 10px !important; font-size: 13px !important;
 }
-#appMenu-popup toolbarseparator { margin: 4px 8px !important; }
+#appMenu-popup toolbarseparator {
+  margin: 4px 8px !important;
+  border: 0 !important; border-image: none !important;
+  border-top: 1px solid var(--ob-divider) !important; background: none !important;
+}

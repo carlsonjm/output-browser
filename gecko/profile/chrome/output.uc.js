@@ -164,7 +164,7 @@
     const used = new Set();
     let last = null;
     const sepFor = () => {
-      let sep = items.find(e => e.localName === "toolbarseparator" && !used.has(e));
+      let sep = items.find(e => e.localName === "toolbarseparator" && !e.id && !used.has(e));
       if (!sep) { sep = doc.createXULElement("toolbarseparator"); }
       used.add(sep);
       return sep;
