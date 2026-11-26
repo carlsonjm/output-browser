@@ -24,8 +24,8 @@
   --toolbar-field-color: var(--ob-ghost) !important;
   --toolbar-field-focus-color: var(--ob-ghost) !important;
   --toolbarbutton-border-radius: 16px !important;
-  --toolbarbutton-hover-background: var(--ob-subtle) !important;
-  --toolbarbutton-active-background: var(--ob-hover) !important;
+  --toolbarbutton-hover-background: var(--ob-hover) !important;
+  --toolbarbutton-active-background: var(--ob-sel) !important;
   --arrowpanel-background: #1a1a1a !important;
   --arrowpanel-color: var(--ob-ghost) !important;
   --arrowpanel-border-color: var(--ob-divider) !important;
@@ -126,7 +126,6 @@
   list-style-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23f8f8ff'%3E%3Ccircle cx='3' cy='8' r='1.4'/%3E%3Ccircle cx='8' cy='8' r='1.4'/%3E%3Ccircle cx='13' cy='8' r='1.4'/%3E%3C/svg%3E") !important;
   -moz-context-properties: fill; fill: currentColor;
 }
-#PanelUI-menu-button[open] > .toolbarbutton-icon { background: var(--ob-hover) !important; }
 #PanelUI-menu-button .toolbarbutton-badge-stack { padding: 0 !important; }
 
 /* ---- the address: a 32 px pill, with the extensions at its right end */
@@ -170,7 +169,7 @@
 }
 #TabsToolbar .unified-extensions-item .unified-extensions-item-action-button { padding: 0 !important; margin: 0 !important; }
 :is(#nav-bar, #TabsToolbar) :is(.unified-extensions-item, #unified-extensions-button) :is(.toolbarbutton-badge-stack, .toolbarbutton-icon) {
-  width: 28px !important; height: 28px !important; padding: 6px !important; border-radius: 14px !important;
+  width: 32px !important; height: 32px !important; padding: 8px !important; border-radius: 16px !important;
 }
 #TabsToolbar #unified-extensions-button { border-radius: 16px !important; }
 #unified-extensions-button .toolbarbutton-icon {
@@ -185,7 +184,6 @@
   display: flex !important; align-items: center; justify-content: center;
   align-self: center !important;
 }
-#star-button-box.ob-star:hover { background: var(--ob-subtle) !important; }
 #star-button-box.ob-star > #star-button { width: 16px !important; height: 16px !important; }
 
 /* The tab button: the logo, first in the row. At rest its two cards sit
@@ -194,12 +192,11 @@
 #ob-tabs {
   order: -1 !important;
   display: flex !important; align-items: center; justify-content: center;
-  width: 36px; height: 32px; padding: 0 !important; margin-inline: 4px 2px !important;
+  width: 32px; height: 32px; padding: 0 !important; margin-inline: 4px 2px !important;
   align-self: center !important; border-radius: 16px !important;
   appearance: none !important; background: transparent !important;
 }
-#ob-tabs:hover { background: var(--ob-subtle) !important; }
-#ob-tabs .ob-logo { width: 24px; height: 24px; overflow: visible; }
+#ob-tabs .ob-logo { width: 22px; height: 22px; overflow: visible; }
 #ob-tabs .ob-logo :is(.ob-b, .ob-r, .ob-mid, .ob-n) {
   transition: transform 260ms cubic-bezier(.3,.7,.2,1), opacity 200ms ease;
   transform-box: view-box;
@@ -233,7 +230,7 @@
   width: 32px !important; height: 32px !important; padding: 8px !important; margin: 0 !important;
   border-radius: 16px !important; background: none !important; color: var(--ob-sec) !important;
 }
-.ob-wins .titlebar-button:hover { background: var(--ob-subtle) !important; color: var(--ob-ghost) !important; }
+.ob-wins .titlebar-button:hover { color: var(--ob-ghost) !important; }
 .ob-wins .titlebar-button > .toolbarbutton-icon {
   appearance: none !important; width: 16px !important; height: 16px !important;
   -moz-context-properties: stroke; stroke: currentColor;
@@ -279,5 +276,41 @@
 #TabsToolbar .unified-extensions-item :is(.unified-extensions-item-action-button, .toolbarbutton-1):hover > .toolbarbutton-badge-stack,
 #TabsToolbar #unified-extensions-button:hover .toolbarbutton-icon { background: var(--ob-hover) !important; }
 #TabsToolbar .unified-extensions-item :is(.unified-extensions-item-action-button, .toolbarbutton-1):is([open], [checked], :active) > .toolbarbutton-badge-stack {
+  background: var(--ob-sel) !important;
+}
+
+
+/* ---- One highlight for every button in the row and the strip: a 32 px
+   circle, light grey on hover, brighter while pressed or open. Firefox's own
+   tints (on the button, its icon, or the star's page-action box) are cleared
+   so only this one shows. */
+#nav-bar :is(#back-button, #forward-button, #reload-button, #stop-button, #PanelUI-menu-button),
+#nav-bar :is(#back-button, #forward-button, #reload-button, #stop-button, #PanelUI-menu-button)
+  > :is(.toolbarbutton-icon, .toolbarbutton-badge-stack),
+#star-button-box.ob-star, #star-button-box.ob-star > #star-button, #ob-tabs, .ob-wins .titlebar-button,
+#TabsToolbar #unified-extensions-button > .toolbarbutton-icon {
+  background: transparent !important; box-shadow: none !important; outline: none !important;
+  background-image: none !important; filter: none !important;
+}
+#nav-bar :is(#back-button, #forward-button, #reload-button, #stop-button)
+  > .toolbarbutton-icon,
+#nav-bar #PanelUI-menu-button > .toolbarbutton-badge-stack {
+  width: 32px !important; height: 32px !important; padding: 8px !important; border-radius: 16px !important;
+}
+#PanelUI-menu-button > .toolbarbutton-badge-stack > .toolbarbutton-icon {
+  width: 16px !important; height: 16px !important; padding: 0 !important; background: transparent !important;
+}
+#nav-bar :is(#back-button, #forward-button, #reload-button, #stop-button):not([disabled]):hover > .toolbarbutton-icon,
+#nav-bar #PanelUI-menu-button:hover > .toolbarbutton-badge-stack,
+#star-button-box.ob-star:hover, #ob-tabs:hover:not([checked]), .ob-wins .titlebar-button:hover,
+#TabsToolbar .unified-extensions-item :is(.unified-extensions-item-action-button, .toolbarbutton-1):hover > .toolbarbutton-badge-stack,
+#TabsToolbar #unified-extensions-button:hover > .toolbarbutton-icon {
+  background: var(--ob-hover) !important;
+}
+#nav-bar :is(#back-button, #forward-button, #reload-button, #stop-button):not([disabled]):is(:active, [open]) > .toolbarbutton-icon,
+#nav-bar #PanelUI-menu-button:is(:active, [open]) > .toolbarbutton-badge-stack,
+#star-button-box.ob-star:active, #ob-tabs:active, #ob-tabs[checked], .ob-wins .titlebar-button:active,
+#TabsToolbar .unified-extensions-item :is(.unified-extensions-item-action-button, .toolbarbutton-1):is([open], [checked], :active) > .toolbarbutton-badge-stack,
+#TabsToolbar #unified-extensions-button:is([open], :active) > .toolbarbutton-icon {
   background: var(--ob-sel) !important;
 }
