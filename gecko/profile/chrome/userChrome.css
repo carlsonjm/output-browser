@@ -251,3 +251,17 @@
   content: ""; position: absolute; inset-inline: 0; top: -5px; height: 1px;
   background: var(--ob-divider);
 }
+
+/* An extension's button in the address pill: the same round highlight as the
+   puzzle, drawn on the icon, never Firefox's own square or larger circle. */
+#nav-bar .unified-extensions-item :is(.unified-extensions-item-action-button, .toolbarbutton-1) {
+  background: transparent !important; box-shadow: none !important;
+}
+#nav-bar .unified-extensions-item :is(.unified-extensions-item-action-button, .toolbarbutton-1) > .toolbarbutton-badge-stack {
+  background: transparent !important; box-shadow: none !important; outline: none !important;
+}
+#nav-bar .unified-extensions-item :is(.unified-extensions-item-action-button, .toolbarbutton-1):hover > .toolbarbutton-badge-stack,
+#nav-bar #unified-extensions-button:hover .toolbarbutton-icon { background: var(--ob-hover) !important; }
+#nav-bar .unified-extensions-item :is(.unified-extensions-item-action-button, .toolbarbutton-1):is([open], [checked], :active) > .toolbarbutton-badge-stack {
+  background: var(--ob-sel) !important;
+}
