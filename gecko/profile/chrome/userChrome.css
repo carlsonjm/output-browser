@@ -206,10 +206,14 @@
 }
 #ob-tabs .ob-b rect { fill: #6d8ef5; }
 #ob-tabs .ob-r rect { fill: #ff7366; }
+#ob-tabs rect { stroke: transparent; stroke-width: 1.3px; transition: fill 220ms ease, stroke 220ms ease; }
 #ob-tabs .ob-mid { opacity: 1; }
-#ob-tabs .ob-n { opacity: 0; fill: #ffffff; font: 700 8px sans-serif; }
+#ob-tabs .ob-n { opacity: 0; fill: var(--ob-ghost); font: 700 7.5px sans-serif; }
 #ob-tabs[checked] .ob-b { transform: translate(3px, -2px); }
-#ob-tabs[checked] .ob-r { transform: translate(-2px, 0.5px); }
+#ob-tabs[checked] .ob-r { transform: translate(-2.5px, 2px); }
+/* Stacked, the cards go back to monochrome: outlined in the chrome's colours. */
+#ob-tabs[checked] .ob-b rect { fill: var(--ob-chrome); stroke: var(--ob-ghost); }
+#ob-tabs[checked] .ob-r rect { fill: var(--ob-chrome); stroke: var(--ob-hint); }
 #ob-tabs[checked] .ob-mid { opacity: 0; }
 #ob-tabs[checked] .ob-n { opacity: 1; transform: translate(3px, -2px); }
 
