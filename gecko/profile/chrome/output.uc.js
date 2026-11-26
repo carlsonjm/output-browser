@@ -97,6 +97,9 @@
       el("rect", BLUE, clip);
       el("rect", RED, el("g", { class: "ob-r" }, svg));
       const blue = el("g", { class: "ob-b" }, svg);
+      // Stacked, a ring in the window's colour keeps an even gap between the
+      // front card's edge and the card behind it.
+      el("rect", Object.assign({ class: "ob-halo" }, BLUE), blue);
       el("rect", BLUE, blue);
       const mid = el("g", { class: "ob-mid" }, svg);
       el("rect", Object.assign({}, RED, { fill: "#f3bde9", "clip-path": "url(#ob-clip-blue)" }), mid);

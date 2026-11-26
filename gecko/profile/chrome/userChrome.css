@@ -214,6 +214,8 @@
 /* Stacked, the cards go back to monochrome: outlined in the chrome's colours. */
 #ob-tabs[checked] .ob-b rect { fill: var(--ob-chrome); stroke: var(--ob-ghost); }
 #ob-tabs[checked] .ob-r rect { fill: var(--ob-chrome); stroke: var(--ob-hint); }
+#ob-tabs .ob-b rect.ob-halo { fill: none; stroke: transparent; stroke-width: 4px; }
+#ob-tabs[checked] .ob-b rect.ob-halo { fill: none; stroke: var(--ob-chrome); }
 #ob-tabs[checked] .ob-mid { opacity: 0; }
 #ob-tabs[checked] .ob-n { opacity: 1; transform: translate(3px, -2.5px); }
 
