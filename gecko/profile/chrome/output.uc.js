@@ -64,7 +64,7 @@
       if (star && star.parentNode !== nav) {
         star.classList.add("ob-star");
         star.removeAttribute("hidden");
-        nav.insertBefore(star, doc.getElementById("ob-tabs") || menu);
+        nav.insertBefore(star, menu);
         log("star moved");
       } else if (!star && tries > 0) {
         setTimeout(() => moveStar(tries - 1), 500);
@@ -74,20 +74,40 @@
     };
     moveStar(10);
 
-    // The tab button, with the number of tabs.
+    // The tab button: the logo, at the left end of the row.
     if (!doc.getElementById("ob-tabs")) {
       const b = doc.createXULElement("toolbarbutton");
       b.id = "ob-tabs";
       b.className = "toolbarbutton-1 chromeclass-toolbar-additional";
       b.setAttribute("tooltiptext", "Tabs");
-      const icon = doc.createElement("div");
-      icon.className = "ob-stack";
-      icon.append(doc.createElement("i"), doc.createElement("i"), doc.createElement("i"));
-      const count = doc.createXULElement("label");
-      count.id = "ob-count";
-      b.append(icon, count);
+      const NS = "http://www.w3.org/2000/svg";
+      const el = (tag, attrs, parent) => {
+        const e = doc.createElementNS(NS, tag);
+        for (const k in attrs) e.setAttribute(k, attrs[k]);
+        if (parent) parent.appendChild(e);
+        return e;
+      };
+      // At rest: the blue card low left, the red card high right; where they
+      // overlap, a pale shape with the O's opening in it.
+      const svg = el("svg", { viewBox: "0 0 24 24", class: "ob-logo" });
+      const defs = el("defs", {}, svg);
+      const clip = el("clipPath", { id: "ob-clip-blue" }, defs);
+      const BLUE = { x: 1, y: 9.5, width: 14, height: 11, rx: 3.5 };
+      const RED = { x: 8, y: 4, width: 14, height: 11, rx: 3.5 };
+      el("rect", BLUE, clip);
+      el("rect", RED, el("g", { class: "ob-r" }, svg));
+      const blue = el("g", { class: "ob-b" }, svg);
+      el("rect", BLUE, blue);
+      const mid = el("g", { class: "ob-mid" }, svg);
+      el("rect", Object.assign({}, RED, { fill: "#f3bde9", "clip-path": "url(#ob-clip-blue)" }), mid);
+      el("circle", { cx: 11.5, cy: 12.25, r: 2.1, fill: "#1c1c1c" }, mid);
+      // Folded out: the cards stack and the front one holds the count.
+      const n = el("text", { class: "ob-n", id: "ob-count", x: 8, y: 15, "text-anchor": "middle",
+                             "dominant-baseline": "central" }, svg);
+      n.textContent = "1";
+      b.append(svg);
       b.addEventListener("command", () => setFolded(!folded()));
-      nav.insertBefore(b, menu);
+      nav.insertBefore(b, nav.firstChild);
     }
 
     // The window buttons go at the end of the row (or the start, if the
@@ -162,7 +182,8 @@
   function updateCount() {
     const n = gBrowser.visibleTabs ? gBrowser.visibleTabs.length : gBrowser.tabs.length;
     const c = doc.getElementById("ob-count");
-    if (c) c.setAttribute("value", String(n));
+    if (c) { c.textContent = n > 99 ? "99+" : String(n); c.style.fontSize = n > 9 ? "6.5px" : ""; }
+    doc.getElementById("ob-tabs")?.setAttribute("tooltiptext", n === 1 ? "1 tab" : n + " tabs");
   }
 
   // ---- the menu: only the rows the mock-up has, in its groups:

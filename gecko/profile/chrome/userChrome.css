@@ -188,23 +188,30 @@
 #star-button-box.ob-star:hover { background: var(--ob-subtle) !important; }
 #star-button-box.ob-star > #star-button { width: 16px !important; height: 16px !important; }
 
-/* the tab button: a small stack of cards and the number of tabs */
+/* The tab button: the logo, first in the row. At rest its two cards sit
+   apart; with the strip folded out they slide together into a stack, and the
+   front card holds the number of tabs. */
 #ob-tabs {
-  display: flex !important; align-items: center; gap: 6px;
-  height: 32px; padding: 0 10px 0 8px !important; margin-inline: 2px !important; align-self: center !important;
-  border-radius: 16px !important; color: var(--ob-ghost) !important;
-  font-size: 12px !important; font-weight: 600 !important; appearance: none !important;
+  order: -1 !important;
+  display: flex !important; align-items: center; justify-content: center;
+  width: 36px; height: 32px; padding: 0 !important; margin-inline: 4px 2px !important;
+  align-self: center !important; border-radius: 16px !important;
+  appearance: none !important; background: transparent !important;
 }
 #ob-tabs:hover { background: var(--ob-subtle) !important; }
-#ob-tabs[checked] { background: var(--ob-sel) !important; }
-#ob-tabs .ob-stack { width: 18px; height: 14px; position: relative; }
-#ob-tabs .ob-stack i {
-  position: absolute; inset: 0; border: 1.5px solid var(--ob-ghost); border-radius: 3px;
-  background: var(--ob-chrome);
+#ob-tabs .ob-logo { width: 24px; height: 24px; overflow: visible; }
+#ob-tabs .ob-logo :is(.ob-b, .ob-r, .ob-mid, .ob-n) {
+  transition: transform 260ms cubic-bezier(.3,.7,.2,1), opacity 200ms ease;
+  transform-box: view-box;
 }
-#ob-tabs .ob-stack i:nth-child(1) { transform: translate(-3px, 3px); opacity: .5; }
-#ob-tabs .ob-stack i:nth-child(2) { transform: translate(-1.5px, 1.5px); opacity: .75; }
-#ob-count { margin: 0 !important; }
+#ob-tabs .ob-b rect { fill: #6d8ef5; }
+#ob-tabs .ob-r rect { fill: #ff7366; }
+#ob-tabs .ob-mid { opacity: 1; }
+#ob-tabs .ob-n { opacity: 0; fill: #ffffff; font: 700 8px sans-serif; }
+#ob-tabs[checked] .ob-b { transform: translate(3px, -2px); }
+#ob-tabs[checked] .ob-r { transform: translate(-2px, 0.5px); }
+#ob-tabs[checked] .ob-mid { opacity: 0; }
+#ob-tabs[checked] .ob-n { opacity: 1; transform: translate(3px, -2px); }
 
 /* ---- window buttons, in the row, on the side the desktop setting puts them */
 .ob-wins { display: flex !important; align-items: center; padding-inline-start: 4px; }
@@ -212,7 +219,7 @@
   content: ""; width: 1px; height: 20px; background: var(--ob-divider); margin-inline: 2px 4px;
 }
 @media (-moz-gtk-csd-reversed-placement) {
-  #nav-bar > .ob-wins { order: -1; padding-inline: 0 4px; flex-direction: row-reverse; }
+  #nav-bar > .ob-wins { order: -2; padding-inline: 0 4px; flex-direction: row-reverse; }
   #nav-bar > .ob-wins::before { margin-inline: 4px 2px; }
 }
 .ob-wins .titlebar-button {
