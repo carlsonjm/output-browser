@@ -293,6 +293,12 @@
     updateCount();
     for (const ev of ["TabOpen", "TabClose", "TabShow", "TabHide"])
       gBrowser.tabContainer.addEventListener(ev, () => setTimeout(updateCount, 0));
+    // Firefox holds tab widths after a close until the pointer leaves the
+    // strip, which leaves + stranded; let the strip settle straight away.
+    gBrowser.tabContainer.addEventListener("TabClose", () => setTimeout(() => {
+      const tc = gBrowser.tabContainer;
+      try { (tc._unlockTabSizing || tc.unlockTabSizing)?.call(tc, { instant: true }); } catch (e) {}
+    }, 0));
     // Ctrl+Shift+Space also folds the strip down and up.
     window.addEventListener("keydown", e => {
       if (e.ctrlKey && e.shiftKey && e.code === "Space") { setFolded(!folded()); e.preventDefault(); }
