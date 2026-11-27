@@ -473,6 +473,15 @@
     for (const ev of ["TabOpen", "TabMove", "TabGrouped", "TabUngrouped", "TabGroupCreate", "TabGroupExpand"])
       gBrowser.tabContainer.addEventListener(ev, () => setTimeout(groupsFirst, 0));
     setTimeout(groupsFirst, 500);
+    // Every window's title is the page's own title, with no "Mozilla
+    // Firefox" after it (new windows were getting it).
+    try {
+      const de = doc.documentElement;
+      for (const [k, v] of [["data-title-default", "Output Browser"], ["data-title-private", "Output Browser"],
+                            ["data-content-title-default", "CONTENTTITLE"], ["data-content-title-private", "CONTENTTITLE"]])
+        if (de.hasAttribute(k)) de.setAttribute(k, v);
+      gBrowser.updateTitlebar?.();
+    } catch (e) { log("title: " + e); }
     // Ctrl+Shift+Space also folds the strip down and up.
     window.addEventListener("keydown", e => {
       if (e.ctrlKey && e.shiftKey && e.code === "Space") { setFolded(!folded()); e.preventDefault(); }
