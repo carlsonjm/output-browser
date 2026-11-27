@@ -336,8 +336,7 @@
       // Pulled down past the strip's bottom edge by a finger's width.
       if (e.clientY > hold.bottom + 40 && dy > 40) {
         const tab = hold.tab; hold = null;
-        log("touch: tab pulled out");
-        if (gBrowser.visibleTabs.length > 1) gBrowser.replaceTabWithWindow(tab);
+        pullOut(tab, "pointer");
       }
     }, true);
     const end = e => { if (hold && e.pointerId === hold.id) { clearTimeout(hold.timer); hold = null; } };
@@ -350,9 +349,19 @@
     strip.addEventListener("touchstart", e => {
       const tab = e.target.closest?.(".tabbrowser-tab");
       if (!tab || e.touches.length !== 1) return;
-      const t = e.touches[0]; start = { x: t.screenX, y: t.screenY };
+      const t = e.touches[0];
+      start = { x: t.screenX, y: t.screenY, tab, bottom: doc.getElementById("TabsToolbar").getBoundingClientRect().bottom };
       timer = setTimeout(() => { timer = null; openHoldMenu(tab, start.x, start.y, "touch"); }, 500);
     }, { passive: true });
+    window.addEventListener("touchmove", e => {
+      const t = e.touches?.[0];
+      if (!start?.tab || !t) return;
+      if (t.clientY > start.bottom + 40 && t.screenY - start.y > 40) {
+        const tab = start.tab; start.tab = null;
+        pullOut(tab, "touch");
+      }
+    }, { passive: true, capture: true });
+    window.addEventListener("touchend", () => { if (start) start.tab = null; }, { passive: true, capture: true });
     const cancel = e => {
       if (!timer) return;
       const t = e.touches?.[0];
@@ -361,6 +370,13 @@
     };
     for (const ev of ["touchmove", "touchend", "touchcancel"]) strip.addEventListener(ev, cancel, { passive: true });
 
+    let pulledAt = 0;
+    function pullOut(tab, how) {
+      if (Date.now() - pulledAt < 800 || !tab.isConnected) return;
+      pulledAt = Date.now();
+      log("touch: tab pulled out (" + how + ")");
+      if (gBrowser.visibleTabs.length > 1) gBrowser.replaceTabWithWindow(tab);
+    }
     let openedAt = 0;
     function openHoldMenu(tab, x, y, how) {
       if (Date.now() - openedAt < 800) return;
