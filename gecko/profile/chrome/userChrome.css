@@ -71,7 +71,7 @@
 #TabsToolbar .titlebar-buttonbox-container,
 #firefox-view-button, #alltabs-button, #tabs-newtab-button ~ toolbarbutton,
 .tab-secondary-label, .tab-icon-overlay { display: none !important; }
-#TabsToolbar-customization-target { min-height: 50px !important; align-items: center !important; }
+#TabsToolbar-customization-target { min-height: 54px !important; align-items: center !important; }
 #tabbrowser-tabs { border: 0 !important; padding: 0 !important; margin: 0 !important; }
 .tabbrowser-tab {
   min-height: 42px !important;
@@ -379,7 +379,10 @@
 }
 #TabsToolbar tab-group {
   display: flex !important; align-items: center !important; gap: 4px !important;
-  margin-inline: 3px !important; padding: 4px !important; border-radius: 14px !important;
+  /* The outline is drawn inside the edge, so each side adds its 1.5 px to
+     the 4 px gap; the height is set outright (42 px tab + 2 x 5.5). */
+  margin-inline: 3px !important; padding: 0 5.5px !important; border-radius: 15px !important;
+  box-sizing: border-box !important; height: 53px !important; min-height: 53px !important; max-height: 53px !important;
   box-shadow: inset 0 0 0 1.5px var(--tab-group-color) !important;
 }
 #TabsToolbar tab-group .tab-group-label-container {
@@ -403,7 +406,7 @@
 #TabsToolbar tab-group .tabbrowser-tab { padding: 0 !important; margin: 0 !important; }
 #TabsToolbar tab-group .tabbrowser-tab .tab-background { margin-inline: 0 !important; }
 #TabsToolbar tab-group .tabbrowser-tab .tab-background { min-height: 42px !important; border-radius: 10px !important; }
-#TabsToolbar tab-group[collapsed] { padding-inline-end: 4px !important; }
+#TabsToolbar tab-group[collapsed] { padding-inline-end: 5.5px !important; }
 #TabsToolbar tab-group { flex: 0 1 auto !important; min-width: 0 !important; }
 #TabsToolbar tab-group .tabbrowser-tab[fadein]:not([closing]) {
   flex: 0 1 210px !important; width: 210px !important; min-width: 76px !important;
