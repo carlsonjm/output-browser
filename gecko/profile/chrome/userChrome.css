@@ -408,3 +408,9 @@
 }
 /* A finger on a tab holds or pulls the tab; it doesn't pan the strip. */
 #TabsToolbar .tabbrowser-tab { touch-action: none !important; }
+/* Every tab, loose or grouped, is the mock-up's 30 px card, centred in the strip. */
+#TabsToolbar .tabbrowser-tab .tab-background {
+  height: 30px !important; max-height: 30px !important; min-height: 30px !important;
+  margin-block: auto !important; align-self: center !important;
+}
+#TabsToolbar .tabbrowser-tab .tab-stack { align-items: center !important; }
