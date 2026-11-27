@@ -75,10 +75,12 @@
 #tabbrowser-tabs { border: 0 !important; padding: 0 !important; margin: 0 !important; }
 .tabbrowser-tab {
   min-height: 30px !important;
-  max-width: 210px !important;
   padding: 0 3px !important;
   -moz-window-dragging: no-drag;
 }
+/* Not on a closing tab: Firefox shrinks it to nothing and removes it when that
+   finishes, and a fixed width would stop it ever finishing. */
+.tabbrowser-tab:not([closing]) { max-width: 210px !important; }
 .tabbrowser-tab:first-of-type { padding-inline-start: 0 !important; }
 .tab-background {
   margin-block: 0 !important;
@@ -337,3 +339,28 @@
   border-radius: 0 !important; background: transparent !important; grid-area: 1 / 1;
 }
 #TabsToolbar .unified-extensions-item .toolbarbutton-badge-stack > .toolbarbutton-badge { grid-area: 1 / 1; align-self: end; justify-self: end; }
+
+/* An extension button in the strip, built the same way as the puzzle: every
+   layer is the same 32 px square, centred, so the circle and icon line up. */
+#TabsToolbar .unified-extensions-item {
+  width: 32px !important; height: 32px !important; min-width: 0 !important;
+  padding: 0 !important; margin: 0 !important; display: flex !important;
+  align-items: center !important; justify-content: center !important;
+}
+#TabsToolbar .unified-extensions-item > .unified-extensions-item-action-button {
+  width: 32px !important; height: 32px !important; min-width: 0 !important; min-height: 0 !important;
+  padding: 0 !important; margin: 0 !important; display: flex !important;
+  align-items: center !important; justify-content: center !important;
+}
+#TabsToolbar .unified-extensions-item :is(.unified-extensions-item-contents, .unified-extensions-item-menu-button) { display: none !important; }
+#TabsToolbar .unified-extensions-item .toolbarbutton-badge-stack {
+  width: 32px !important; height: 32px !important; padding: 0 !important; margin: 0 !important;
+  display: flex !important; align-items: center !important; justify-content: center !important;
+  position: relative !important;
+}
+#TabsToolbar .unified-extensions-item .toolbarbutton-badge-stack > .toolbarbutton-icon {
+  position: static !important; inset: auto !important; transform: none !important;
+}
+#TabsToolbar .unified-extensions-item .toolbarbutton-badge-stack > .toolbarbutton-badge {
+  position: absolute !important; inset-inline-end: 2px !important; bottom: 2px !important;
+}

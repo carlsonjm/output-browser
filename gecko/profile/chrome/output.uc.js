@@ -146,6 +146,35 @@
         CustomizableUI.getWidgetIdsInArea("TabsToolbar").filter(id => id.endsWith("-browser-action")).length);
   }
 
+  // For the self-check: where things in the strip really are.
+  const box = e => { const r = e.getBoundingClientRect(); return Math.round(r.x) + "," + Math.round(r.y) + " " + Math.round(r.width) + "x" + Math.round(r.height); };
+  function describeStrip() {
+    const tabs = [...doc.querySelectorAll(".tabbrowser-tab")].map(t =>
+      (t.hasAttribute("closing") ? "closing:" : "") + box(t) + (t.style.maxWidth ? " mw=" + t.style.maxWidth : ""));
+    const plus = doc.getElementById("tabs-newtab-button");
+    const spacer = doc.querySelector(".closing-tabs-spacer");
+    return "tabs [" + tabs.join(" | ") + "] plus " + (plus ? box(plus) : "none") +
+           (spacer ? " spacer " + spacer.style.width : "");
+  }
+  function describeExtension() {
+    const item = doc.querySelector("#TabsToolbar .unified-extensions-item");
+    if (!item) { log("extension layers: none in the strip"); return; }
+    const out = [];
+    const walk = (e, d) => {
+      if (d > 4) return;
+      const cs = getComputedStyle(e);
+      if (cs.display !== "none")
+        out.push(e.localName + (e.className ? "." + String(e.className).split(" ").join(".") : "") + " " + box(e) +
+                 " pad " + cs.padding + " mar " + cs.margin + " pos " + cs.position);
+      for (const c of e.children) walk(c, d + 1);
+    };
+    walk(item, 0);
+    log("extension layers: " + out.join(" || "));
+  }
+  window.addEventListener("keydown", e => {
+    if (e.ctrlKey && e.shiftKey && e.code === "KeyL") { describeExtension(); log("strip: " + describeStrip()); e.preventDefault(); }
+  }, true);
+
   // An extension shown later (a new install, or Show in the list) goes to the
   // strip too, never the address.
   function keepExtensionsInPlace() {
@@ -294,10 +323,17 @@
     for (const ev of ["TabOpen", "TabClose", "TabShow", "TabHide"])
       gBrowser.tabContainer.addEventListener(ev, () => setTimeout(updateCount, 0));
     // Firefox holds tab widths after a close until the pointer leaves the
-    // strip, which leaves + stranded; let the strip settle straight away.
+    // strip, which leaves + stranded; let the strip settle straight away. If a
+    // closing tab is still there a moment later, finish its close.
     gBrowser.tabContainer.addEventListener("TabClose", () => setTimeout(() => {
       const tc = gBrowser.tabContainer;
       try { (tc._unlockTabSizing || tc.unlockTabSizing)?.call(tc, { instant: true }); } catch (e) {}
+      setTimeout(() => {
+        const stuck = [...doc.querySelectorAll(".tabbrowser-tab[closing]")];
+        for (const t of stuck)
+          t.dispatchEvent(new TransitionEvent("transitionend", { propertyName: "max-width", bubbles: true }));
+        log("after close: " + describeStrip() + (stuck.length ? " (finished " + stuck.length + " stuck close)" : ""));
+      }, 450);
     }, 0));
     // Ctrl+Shift+Space also folds the strip down and up.
     window.addEventListener("keydown", e => {
