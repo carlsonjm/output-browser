@@ -325,9 +325,7 @@
                bottom: doc.getElementById("TabsToolbar").getBoundingClientRect().bottom,
                timer: setTimeout(() => {
                  if (!hold || hold.moved) return;
-                 TabContextMenu.contextTab = hold.tab;
-                 menu?.openPopupAtScreen(hold.x, hold.y, true);
-                 log("touch: hold menu");
+                 openHoldMenu(hold.tab, hold.x, hold.y, "pointer");
                  hold = null;
                }, 500) };
     }, true);
@@ -345,6 +343,32 @@
     const end = e => { if (hold && e.pointerId === hold.id) { clearTimeout(hold.timer); hold = null; } };
     window.addEventListener("pointerup", end, true);
     window.addEventListener("pointercancel", end, true);
+
+    // The touch-event path that J confirmed opens the menu, kept alongside;
+    // whichever fires first opens it, once.
+    let timer = null, start = null;
+    strip.addEventListener("touchstart", e => {
+      const tab = e.target.closest?.(".tabbrowser-tab");
+      if (!tab || e.touches.length !== 1) return;
+      const t = e.touches[0]; start = { x: t.screenX, y: t.screenY };
+      timer = setTimeout(() => { timer = null; openHoldMenu(tab, start.x, start.y, "touch"); }, 500);
+    }, { passive: true });
+    const cancel = e => {
+      if (!timer) return;
+      const t = e.touches?.[0];
+      if (e.type === "touchmove" && t && Math.hypot(t.screenX - start.x, t.screenY - start.y) < 10) return;
+      clearTimeout(timer); timer = null;
+    };
+    for (const ev of ["touchmove", "touchend", "touchcancel"]) strip.addEventListener(ev, cancel, { passive: true });
+
+    let openedAt = 0;
+    function openHoldMenu(tab, x, y, how) {
+      if (Date.now() - openedAt < 800) return;
+      openedAt = Date.now();
+      TabContextMenu.contextTab = tab;
+      menu?.openPopupAtScreen(x, y, true);
+      log("touch: hold menu (" + how + ")");
+    }
   }
 
   // ---- start page and search
