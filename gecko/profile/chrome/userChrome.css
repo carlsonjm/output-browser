@@ -419,3 +419,26 @@
   margin-block: auto !important; align-self: center !important;
 }
 #TabsToolbar .tabbrowser-tab .tab-stack { align-items: center !important; }
+/* ---- Firefox's purple accent, in Shuffle's colours. The motion (the
+   loading burst and throbber, focus rings, the primary button) stays as it
+   is; only the colour changes, to Ghost on Piano. */
+:root, :host {
+  --color-accent-primary: #f8f8ff !important;
+  --color-accent-primary-hover: #e4e4ec !important;
+  --color-accent-primary-active: #d0d0d8 !important;
+  --color-accent-primary-selected: #f8f8ff !important;
+  --button-background-color-primary: #f8f8ff !important;
+  --button-background-color-primary-hover: #e4e4ec !important;
+  --button-background-color-primary-active: #d0d0d8 !important;
+  --button-text-color-primary: #141414 !important;
+  --button-text-color-primary-hover: #141414 !important;
+  --button-text-color-primary-active: #141414 !important;
+  --focus-outline-color: rgba(248,248,255,.55) !important;
+  --tab-loading-fill: #f8f8ff !important;
+  --tab-attention-icon-color: #f8f8ff !important;
+  --toolbarbutton-icon-fill-attention: #f8f8ff !important;
+  --toolbarbutton-icon-fill-attention-text: #141414 !important;
+  --input-border-color-focus: rgba(248,248,255,.55) !important;
+  --checkbox-checked-bgcolor: #f8f8ff !important;
+  --checkbox-checked-color: #141414 !important;
+}
