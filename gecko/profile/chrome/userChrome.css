@@ -378,18 +378,27 @@
   --tab-group-color-gray: #9a9a9a !important; --tab-group-color-grey: #9a9a9a !important;
 }
 #TabsToolbar tab-group {
-  display: flex !important; align-items: center !important; gap: 4px;
-  margin-inline: 3px !important; padding: 3px 4px 3px 3px !important; border-radius: 10px !important;
+  display: flex !important; align-items: center !important; gap: 0;
+  margin-inline: 3px !important; padding: 2px !important; border-radius: 13px !important;
   box-shadow: inset 0 0 0 1.5px var(--tab-group-color) !important;
 }
-#TabsToolbar tab-group .tab-group-label-container { padding: 0 !important; margin: 0 !important; }
-#TabsToolbar tab-group .tab-group-label {
-  height: 24px !important; min-height: 24px !important; padding: 0 9px !important; margin: 0 !important;
-  border-radius: 12px !important; background: var(--tab-group-color) !important; color: #141414 !important;
-  font-size: 11px !important; font-weight: 600 !important; line-height: 24px !important;
-  outline: none !important; box-shadow: none !important;
+#TabsToolbar tab-group .tab-group-label-container {
+  padding: 0 3px 0 2px !important; margin: 0 !important; border: 0 !important; background: none !important;
 }
-#TabsToolbar tab-group .tab-group-line, #TabsToolbar tab-group .tab-group-overflow-count-container { display: none !important; }
-#TabsToolbar tab-group .tabbrowser-tab { min-height: 24px !important; padding: 0 !important; }
-#TabsToolbar tab-group .tabbrowser-tab .tab-background { min-height: 24px !important; border-radius: 8px !important; }
-#TabsToolbar tab-group[collapsed] { padding-inline-end: 3px !important; }
+#TabsToolbar tab-group .tab-group-label-container::before,
+#TabsToolbar tab-group .tab-group-label-container::after,
+#TabsToolbar tab-group .tab-group-label::after { display: none !important; content: none !important; }
+#TabsToolbar tab-group .tab-group-label {
+  height: 26px !important; min-height: 26px !important; padding: 0 10px !important; margin: 0 !important;
+  border: 0 !important; border-radius: 13px !important;
+  background: var(--tab-group-color) !important; color: #141414 !important;
+  font-size: 12px !important; font-weight: 600 !important; line-height: 26px !important;
+  outline: none !important; box-shadow: none !important; text-decoration: none !important;
+}
+#TabsToolbar tab-group .tab-group-line, #TabsToolbar .tab-group-line,
+#TabsToolbar tab-group .tab-group-overflow-count-container { display: none !important; }
+/* A grouped tab is a full tab: the same width and height as any other. */
+#TabsToolbar tab-group .tabbrowser-tab { padding: 0 2px !important; }
+#TabsToolbar tab-group .tabbrowser-tab:last-of-type { padding-inline-end: 0 !important; }
+#TabsToolbar tab-group .tabbrowser-tab .tab-background { min-height: 30px !important; border-radius: 10px !important; }
+#TabsToolbar tab-group[collapsed] { padding-inline-end: 2px !important; }
