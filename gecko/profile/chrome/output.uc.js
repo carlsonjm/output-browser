@@ -461,11 +461,14 @@
       tabs.forEach((t, i) => { if (t.group) last = i; });
       const ahead = tabs.slice(0, last).filter(t => !t.group);
       if (!ahead.length) return;
+      // Move every loose tab, in order, so the ones already behind the groups
+      // keep their place in the line too.
+      const loose = tabs.filter(t => !t.group);
       ordering = true;
-      try { for (const t of ahead) gBrowser.moveTabToEnd(t); }
+      try { for (const t of loose) gBrowser.moveTabToEnd(t); }
       catch (e) { log("groups first: " + e); }
       finally { ordering = false; }
-      log("groups first: moved " + ahead.length + " loose tab(s) after the groups");
+      log("groups first: moved " + loose.length + " loose tab(s) after the groups");
     };
     for (const ev of ["TabOpen", "TabMove", "TabGrouped", "TabUngrouped", "TabGroupCreate", "TabGroupExpand"])
       gBrowser.tabContainer.addEventListener(ev, () => setTimeout(groupsFirst, 0));
