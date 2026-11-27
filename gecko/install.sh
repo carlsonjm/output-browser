@@ -28,6 +28,9 @@ cp "$HERE"/profile/chrome/* "$DEST/profile/chrome/"
 sed "s|@START@|file://$DEST/profile/chrome/start.html|" "$HERE/profile/user.js" > "$DEST/profile/user.js"
 cat > "$DEST/run.sh" <<RUN
 #!/usr/bin/env bash
+# The name the desktop knows the browser by: its media player, its windows and
+# its Card name output-browser-gecko, not Firefox.
+export MOZ_APP_REMOTINGNAME=output-browser-gecko
 exec "$DEST/firefox/firefox" --name output-browser-gecko --class output-browser-gecko \\
   --profile "$DEST/profile" --no-remote "\$@"
 RUN

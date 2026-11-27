@@ -275,6 +275,65 @@
     doc.addEventListener("popupshowing", e => { if (e.target.id === "appMenu-popup") shapeMenu(); }, true);
   }
 
+  // ---- a tab's hold menu: touch and hold a tab, or right-click it. Only the
+  // rows for organising the tab, with Add to group first, as in the mock-up.
+  const TAB_MENU = [
+    /Group/i,
+    "-",
+    /pinTab|unpinTab/, /moveTabOptions|moveToNewWindow|openTabInWindow/, /duplicateTab/,
+    "-",
+    /reloadTab$/, /toggleMuteTab/,
+    "-",
+    /closeTab$/, /closeTabOptions/,
+  ];
+  let tabMenuLogged = false;
+  function shapeTabMenu(menu) {
+    const items = [...menu.children];
+    if (!tabMenuLogged) { tabMenuLogged = true; log("tab menu rows: " + items.map(e => e.id || e.localName).join(" ")); }
+    const used = new Set();
+    let last = null, sepNext = false;
+    for (const row of TAB_MENU) {
+      if (row === "-") { sepNext = last !== null; continue; }
+      for (const el of items.filter(e => !used.has(e) && e.id && row.test(e.id) && e.localName !== "menuseparator")) {
+        if (sepNext) {
+          const sep = items.find(e => e.localName === "menuseparator" && !used.has(e));
+          if (sep) { used.add(sep); sep.removeAttribute("hidden"); menu.insertBefore(sep, last.nextSibling); last = sep; }
+          sepNext = false;
+        }
+        used.add(el);
+        menu.insertBefore(el, last ? last.nextSibling : menu.firstChild);
+        last = el;
+      }
+    }
+    // Firefox shows or hides each row for the tab at hand; ours only hides the
+    // rows that aren't in the list.
+    for (const e of items) if (!used.has(e)) e.setAttribute("hidden", "true");
+  }
+  function holdTabs() {
+    const menu = doc.getElementById("tabContextMenu");
+    if (menu) menu.addEventListener("popupshowing", e => { if (e.target === menu) setTimeout(() => shapeTabMenu(menu), 0); });
+    // Touch and hold a tab: the same menu, where the finger is.
+    let timer = null, start = null;
+    const strip = gBrowser.tabContainer;
+    strip.addEventListener("touchstart", e => {
+      const tab = e.target.closest?.(".tabbrowser-tab");
+      if (!tab || e.touches.length !== 1) return;
+      const t = e.touches[0]; start = { x: t.screenX, y: t.screenY };
+      timer = setTimeout(() => {
+        timer = null;
+        TabContextMenu.contextTab = tab;
+        menu?.openPopupAtScreen(start.x, start.y, true);
+      }, 500);
+    }, { passive: true });
+    const cancel = e => {
+      if (!timer) return;
+      const t = e.touches?.[0];
+      if (e.type === "touchmove" && t && Math.hypot(t.screenX - start.x, t.screenY - start.y) < 10) return;
+      clearTimeout(timer); timer = null;
+    };
+    for (const ev of ["touchmove", "touchend", "touchcancel"]) strip.addEventListener(ev, cancel, { passive: true });
+  }
+
   // ---- start page and search
   async function startPageAndSearch() {
     try {
@@ -306,6 +365,7 @@
     try { buildRow(); } catch (e) { log("row: " + e); }
     try { keepExtensionsInPlace(); } catch (e) { log("extensions: " + e); }
     try { trimMenu(); } catch (e) { log("menu: " + e); }
+    try { holdTabs(); } catch (e) { log("tab menu: " + e); }
     startPageAndSearch().then(() => setTimeout(placeholder, 300));
     placeholder();
     // For the self-check: say when the menu opens and closes.

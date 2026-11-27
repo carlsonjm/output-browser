@@ -365,3 +365,31 @@
 #TabsToolbar .unified-extensions-item .toolbarbutton-badge-stack > .toolbarbutton-badge {
   position: absolute !important; inset-inline-end: 2px !important; bottom: 2px !important;
 }
+
+
+/* ---- Tab groups, as in the mock-up: a coloured name in a pill, and the
+   group's tabs inside a thin outline of the same colour. Firefox's colours
+   are swapped for the mock-up's softer ones. */
+:root {
+  --tab-group-color-orange: #d9a35b !important; --tab-group-color-blue: #6fa8c9 !important;
+  --tab-group-color-pink: #d98a9a !important; --tab-group-color-purple: #9b86c9 !important;
+  --tab-group-color-green: #7fc8a9 !important; --tab-group-color-yellow: #e8c27a !important;
+  --tab-group-color-red: #d97a6c !important; --tab-group-color-cyan: #6fc0c9 !important;
+  --tab-group-color-gray: #9a9a9a !important; --tab-group-color-grey: #9a9a9a !important;
+}
+#TabsToolbar tab-group {
+  display: flex !important; align-items: center !important; gap: 4px;
+  margin-inline: 3px !important; padding: 3px 4px 3px 3px !important; border-radius: 10px !important;
+  box-shadow: inset 0 0 0 1.5px var(--tab-group-color) !important;
+}
+#TabsToolbar tab-group .tab-group-label-container { padding: 0 !important; margin: 0 !important; }
+#TabsToolbar tab-group .tab-group-label {
+  height: 24px !important; min-height: 24px !important; padding: 0 9px !important; margin: 0 !important;
+  border-radius: 12px !important; background: var(--tab-group-color) !important; color: #141414 !important;
+  font-size: 11px !important; font-weight: 600 !important; line-height: 24px !important;
+  outline: none !important; box-shadow: none !important;
+}
+#TabsToolbar tab-group .tab-group-line, #TabsToolbar tab-group .tab-group-overflow-count-container { display: none !important; }
+#TabsToolbar tab-group .tabbrowser-tab { min-height: 24px !important; padding: 0 !important; }
+#TabsToolbar tab-group .tabbrowser-tab .tab-background { min-height: 24px !important; border-radius: 8px !important; }
+#TabsToolbar tab-group[collapsed] { padding-inline-end: 3px !important; }
