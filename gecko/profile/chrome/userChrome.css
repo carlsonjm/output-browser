@@ -402,3 +402,7 @@
 #TabsToolbar tab-group .tabbrowser-tab:last-of-type { padding-inline-end: 0 !important; }
 #TabsToolbar tab-group .tabbrowser-tab .tab-background { min-height: 30px !important; border-radius: 10px !important; }
 #TabsToolbar tab-group[collapsed] { padding-inline-end: 2px !important; }
+#TabsToolbar tab-group { flex: 0 1 auto !important; min-width: 0 !important; }
+#TabsToolbar tab-group .tabbrowser-tab[fadein]:not([closing]) {
+  flex: 0 1 210px !important; width: 210px !important; min-width: 76px !important;
+}
