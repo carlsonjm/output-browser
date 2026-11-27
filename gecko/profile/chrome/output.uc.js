@@ -312,26 +312,39 @@
   function holdTabs() {
     const menu = doc.getElementById("tabContextMenu");
     if (menu) menu.addEventListener("popupshowing", e => { if (e.target === menu) setTimeout(() => shapeTabMenu(menu), 0); });
-    // Touch and hold a tab: the same menu, where the finger is.
-    let timer = null, start = null;
+    // By touch (pointer events, which reach the strip whether or not the
+    // system sends touch events): hold a tab for its menu, or pull it down
+    // out of the strip to make it its own window, as the mouse does.
     const strip = gBrowser.tabContainer;
-    strip.addEventListener("touchstart", e => {
+    let hold = null;
+    strip.addEventListener("pointerdown", e => {
+      if (e.pointerType !== "touch") return;
       const tab = e.target.closest?.(".tabbrowser-tab");
-      if (!tab || e.touches.length !== 1) return;
-      const t = e.touches[0]; start = { x: t.screenX, y: t.screenY };
-      timer = setTimeout(() => {
-        timer = null;
-        TabContextMenu.contextTab = tab;
-        menu?.openPopupAtScreen(start.x, start.y, true);
-      }, 500);
-    }, { passive: true });
-    const cancel = e => {
-      if (!timer) return;
-      const t = e.touches?.[0];
-      if (e.type === "touchmove" && t && Math.hypot(t.screenX - start.x, t.screenY - start.y) < 10) return;
-      clearTimeout(timer); timer = null;
-    };
-    for (const ev of ["touchmove", "touchend", "touchcancel"]) strip.addEventListener(ev, cancel, { passive: true });
+      if (!tab) return;
+      hold = { tab, x: e.screenX, y: e.screenY, id: e.pointerId, moved: false,
+               bottom: doc.getElementById("TabsToolbar").getBoundingClientRect().bottom,
+               timer: setTimeout(() => {
+                 if (!hold || hold.moved) return;
+                 TabContextMenu.contextTab = hold.tab;
+                 menu?.openPopupAtScreen(hold.x, hold.y, true);
+                 log("touch: hold menu");
+                 hold = null;
+               }, 500) };
+    }, true);
+    window.addEventListener("pointermove", e => {
+      if (!hold || e.pointerId !== hold.id) return;
+      const dx = e.screenX - hold.x, dy = e.screenY - hold.y;
+      if (Math.hypot(dx, dy) > 10) { hold.moved = true; clearTimeout(hold.timer); }
+      // Pulled down past the strip's bottom edge by a finger's width.
+      if (e.clientY > hold.bottom + 40 && dy > 40) {
+        const tab = hold.tab; hold = null;
+        log("touch: tab pulled out");
+        if (gBrowser.visibleTabs.length > 1) gBrowser.replaceTabWithWindow(tab);
+      }
+    }, true);
+    const end = e => { if (hold && e.pointerId === hold.id) { clearTimeout(hold.timer); hold = null; } };
+    window.addEventListener("pointerup", end, true);
+    window.addEventListener("pointercancel", end, true);
   }
 
   // ---- start page and search

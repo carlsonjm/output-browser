@@ -406,3 +406,5 @@
 #TabsToolbar tab-group .tabbrowser-tab[fadein]:not([closing]) {
   flex: 0 1 210px !important; width: 210px !important; min-width: 76px !important;
 }
+/* A finger on a tab holds or pulls the tab; it doesn't pan the strip. */
+#TabsToolbar .tabbrowser-tab { touch-action: none !important; }
