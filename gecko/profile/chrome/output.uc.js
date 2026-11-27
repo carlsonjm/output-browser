@@ -150,7 +150,8 @@
   const box = e => { const r = e.getBoundingClientRect(); return Math.round(r.x) + "," + Math.round(r.y) + " " + Math.round(r.width) + "x" + Math.round(r.height); };
   function describeStrip() {
     const tabs = [...doc.querySelectorAll(".tabbrowser-tab")].map(t =>
-      (t.hasAttribute("closing") ? "closing:" : "") + box(t) + (t.style.maxWidth ? " mw=" + t.style.maxWidth : ""));
+      (t.closing || t.hasAttribute("closing") ? "closing:" : "") + (t.hasAttribute("fadein") ? "" : "nofadein:") +
+      box(t) + (t.style.maxWidth ? " mw=" + t.style.maxWidth : "") + " cmw=" + getComputedStyle(t).maxWidth);
     const plus = doc.getElementById("tabs-newtab-button");
     const spacer = doc.querySelector(".closing-tabs-spacer");
     return "tabs [" + tabs.join(" | ") + "] plus " + (plus ? box(plus) : "none") +
@@ -329,7 +330,8 @@
       const tc = gBrowser.tabContainer;
       try { (tc._unlockTabSizing || tc.unlockTabSizing)?.call(tc, { instant: true }); } catch (e) {}
       setTimeout(() => {
-        const stuck = [...doc.querySelectorAll(".tabbrowser-tab[closing]")];
+        const stuck = [...doc.querySelectorAll(".tabbrowser-tab")].filter(t =>
+          t.closing || t.hasAttribute("closing") || !t.hasAttribute("fadein"));
         for (const t of stuck)
           t.dispatchEvent(new TransitionEvent("transitionend", { propertyName: "max-width", bubbles: true }));
         log("after close: " + describeStrip() + (stuck.length ? " (finished " + stuck.length + " stuck close)" : ""));
