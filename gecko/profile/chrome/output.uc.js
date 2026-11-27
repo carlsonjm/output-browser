@@ -424,6 +424,93 @@
     }
   }
 
+
+  function groupSizes() {
+    const KEY = "ob-small-groups";
+    let small = new Set();
+    try { small = new Set(JSON.parse(SessionStore.getCustomGlobalValue(KEY) || "[]")); } catch (e) {}
+    const save = () => { try { SessionStore.setCustomGlobalValue(KEY, JSON.stringify([...small])); } catch (e) {} };
+    const groups = () => [...doc.querySelectorAll("#TabsToolbar tab-group")];
+    const refresh = () => {
+      for (const g of groups()) {
+        g.toggleAttribute("ob-small", small.has(g.id));
+        const n = g.tabs ? g.tabs.length : g.querySelectorAll(".tabbrowser-tab").length;
+        g.querySelector(".tab-group-label")?.setAttribute("ob-count", String(n));
+        g.toggleAttribute("ob-active", !!g.querySelector(".tabbrowser-tab[selected]"));
+      }
+    };
+    for (const ev of ["TabOpen", "TabClose", "TabSelect", "TabGrouped", "TabUngrouped", "TabGroupCreate",
+                      "TabGroupCollapse", "TabGroupExpand", "TabGroupRemoved"])
+      gBrowser.tabContainer.addEventListener(ev, () => setTimeout(refresh, 0));
+    setTimeout(refresh, 500);
+
+    // Which group the menu is for: the one last held or right-clicked.
+    let menuGroup = null;
+    const strip = gBrowser.tabContainer;
+    strip.addEventListener("contextmenu", e => {
+      const g = e.target.closest?.("tab-group");
+      if (g && e.target.closest(".tab-group-label-container")) menuGroup = g;
+    }, true);
+    // A finger held on the name opens the group's menu; the lift that
+    // follows doesn't also fold the group.
+    let hold = null, swallowClick = false;
+    strip.addEventListener("pointerdown", e => {
+      if (e.pointerType !== "touch") return;
+      const label = e.target.closest?.(".tab-group-label-container");
+      if (!label) return;
+      const g = label.closest("tab-group");
+      hold = { x: e.screenX, y: e.screenY, timer: setTimeout(() => {
+        hold = null; menuGroup = g; swallowClick = true;
+        const r = label.getBoundingClientRect();
+        let opened = false;
+        try { if (gBrowser.tabGroupMenu?.openEditModal) { gBrowser.tabGroupMenu.openEditModal(g); opened = true; } } catch (err) {}
+        if (!opened) label.querySelector(".tab-group-label")?.dispatchEvent(new MouseEvent("contextmenu",
+          { bubbles: true, cancelable: true, clientX: r.left + 8, clientY: r.bottom, button: 2 }));
+        log("group: hold menu");
+      }, 500) };
+    }, true);
+    window.addEventListener("pointermove", e => {
+      if (hold && Math.hypot(e.screenX - hold.x, e.screenY - hold.y) > 10) { clearTimeout(hold.timer); hold = null; }
+    }, true);
+    const lift = () => { if (hold) { clearTimeout(hold.timer); hold = null; } };
+    window.addEventListener("pointerup", lift, true);
+    window.addEventListener("pointercancel", lift, true);
+    strip.addEventListener("click", e => {
+      if (swallowClick && e.target.closest?.(".tab-group-label-container")) {
+        e.stopPropagation(); e.preventDefault(); swallowClick = false;
+      }
+    }, true);
+
+    // The row in the group's menu.
+    doc.addEventListener("popupshowing", e => {
+      const panel = e.target;
+      if (!/tab-group-editor|tabGroupEditor/i.test(panel.id || "")) return;
+      const g = (gBrowser.tabGroupMenu?.activeGroup) || menuGroup;
+      let row = panel.querySelector("#ob-group-small");
+      if (!row) {
+        const first = panel.querySelector("toolbarbutton, .subviewbutton, button");
+        if (!first) { log("group menu: no rows found"); return; }
+        row = doc.createXULElement("toolbarbutton");
+        row.id = "ob-group-small";
+        row.className = first.className;
+        row.addEventListener("command", () => {
+          const grp = row._group;
+          if (!grp) return;
+          small.has(grp.id) ? small.delete(grp.id) : small.add(grp.id);
+          save(); refresh();
+          log("group: " + (small.has(grp.id) ? "smaller" : "full-size") + " tabs");
+          panel.hidePopup?.();
+        });
+        first.parentNode.insertBefore(row, first);
+        const sep = doc.createXULElement("toolbarseparator");
+        first.parentNode.insertBefore(sep, first);
+      }
+      row._group = g;
+      row.setAttribute("label", g && small.has(g.id) ? "Full-size tabs" : "Smaller tabs");
+      log("group menu shown" + (g ? "" : " (group not known)"));
+    }, true);
+  }
+
   // ---- start page and search
   async function startPageAndSearch() {
     try {
@@ -519,6 +606,11 @@
         if (de.hasAttribute(k)) de.setAttribute(k, v);
       gBrowser.updateTitlebar?.();
     } catch (e) { log("title: " + e); }
+    // ---- Groups fold to their name, and can show smaller tabs.
+    // Tapping a group's name folds or opens it (Firefox's own). Holding it,
+    // or right-clicking, opens the group's menu, whose first row is
+    // "Smaller tabs": that group's tabs become finger-sized icon squares.
+    try { groupSizes(); } catch (e) { log("group sizes: " + e); }
     // Ctrl+Shift+Space also folds the strip down and up.
     window.addEventListener("keydown", e => {
       if (e.ctrlKey && e.shiftKey && e.code === "Space") { setFolded(!folded()); e.preventDefault(); }

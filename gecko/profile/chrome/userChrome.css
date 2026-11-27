@@ -442,3 +442,24 @@
   --checkbox-checked-bgcolor: #f8f8ff !important;
   --checkbox-checked-color: #141414 !important;
 }
+
+/* ---- A group's two smaller states.
+   Smaller tabs: each tab is a 42 px square showing only the site's icon. */
+#TabsToolbar tab-group[ob-small] .tabbrowser-tab[fadein]:not([closing]) {
+  flex: 0 0 42px !important; width: 42px !important; min-width: 42px !important; max-width: 42px !important;
+}
+#TabsToolbar tab-group[ob-small] .tabbrowser-tab .tab-content { padding: 0 !important; justify-content: center !important; }
+#TabsToolbar tab-group[ob-small] .tabbrowser-tab :is(.tab-label-container, .tab-close-button) { display: none !important; }
+#TabsToolbar tab-group[ob-small] .tabbrowser-tab .tab-icon-stack { margin: 0 !important; }
+/* Folded: the name pill shows how many tabs are inside. */
+#TabsToolbar tab-group[collapsed] .tab-group-label[ob-count]::after {
+  display: inline-block !important; content: attr(ob-count) !important;
+  margin-inline-start: 5px; padding: 0 4px; border-radius: 6px; line-height: 14px;
+  background: rgba(20,20,20,.18); font-variant-numeric: tabular-nums;
+}
+#TabsToolbar tab-group[collapsed] .tab-group-label { display: inline-flex !important; align-items: center !important; }
+/* Fully folded (the page you're on isn't in it): just the pill, no outline.
+   With the page you're on in it, that tab stays out inside the outline. */
+#TabsToolbar tab-group[collapsed]:not([ob-active]):not([hasactivetab]) {
+  box-shadow: none !important; padding: 0 2px !important;
+}
