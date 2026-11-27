@@ -34,3 +34,4 @@ user_pref("media.gmp-widevinecdm.visible", true);
 user_pref("media.gmp-widevinecdm.enabled", true);
 user_pref("media.ffmpeg.vaapi.enabled", true);
 user_pref("privacy.file_unique_origin", false);
+user_pref("browser.tabs.groups.enabled", true);
