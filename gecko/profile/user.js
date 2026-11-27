@@ -35,3 +35,12 @@ user_pref("media.gmp-widevinecdm.enabled", true);
 user_pref("media.ffmpeg.vaapi.enabled", true);
 user_pref("privacy.file_unique_origin", false);
 user_pref("browser.tabs.groups.enabled", true);
+// Open where you left off: the last session's tabs and groups come back.
+user_pref("browser.startup.page", 3);
+// Firefox's own AI features stay off; the browser's helpers will be ours.
+user_pref("browser.ml.enable", false);
+user_pref("browser.ml.chat.enabled", false);
+user_pref("browser.ml.chat.sidebar", false);
+user_pref("browser.ml.linkPreview.enabled", false);
+user_pref("browser.tabs.groups.smart.enabled", false);
+user_pref("browser.tabs.groups.smart.userEnabled", false);
