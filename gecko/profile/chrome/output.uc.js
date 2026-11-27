@@ -7,6 +7,8 @@
 // pressed. The page sits in a rounded box on the window's own frame.
 (function () {
   "use strict";
+  if (window.__outputBrowserLoaded) return;
+  window.__outputBrowserLoaded = true;
   const doc = document;
   const log = m => console.log("[output-browser] " + m);
 
@@ -109,7 +111,7 @@
                              "dominant-baseline": "central" }, svg);
       n.textContent = "1";
       b.append(svg);
-      b.addEventListener("command", () => setFolded(!folded()));
+      b.addEventListener("command", () => { setFolded(!folded()); log("tab button: strip " + (folded() ? "out" : "in")); });
       nav.insertBefore(b, nav.firstChild);
     }
 
@@ -321,6 +323,7 @@
       if (e.pointerType !== "touch") return;
       const tab = e.target.closest?.(".tabbrowser-tab");
       if (!tab) return;
+      log("touch: press on a tab, strip bottom " + Math.round(doc.getElementById("TabsToolbar").getBoundingClientRect().bottom));
       hold = { tab, x: e.screenX, y: e.screenY, id: e.pointerId, moved: false,
                bottom: doc.getElementById("TabsToolbar").getBoundingClientRect().bottom,
                timer: setTimeout(() => {
@@ -370,11 +373,45 @@
     };
     for (const ev of ["touchmove", "touchend", "touchcancel"]) strip.addEventListener(ev, cancel, { passive: true });
 
+    // A finger's pull is ours (above), so Firefox's own tab drag never starts
+    // from touch: a native drag begun by a finger, whose tab then leaves for a
+    // new window that Cards carries, never gets its drop, and an unfinished
+    // drag stops every later tab drag, mouse or touch.
+    strip.addEventListener("dragstart", e => {
+      const src = e.mozInputSource;
+      const tab = e.target.closest?.(".tabbrowser-tab");
+      log("drag start: " + (src === 5 ? "touch" : src === 1 ? "mouse" : "source " + src) +
+          (tab ? "" : " (not a tab)") + " at " + Math.round(e.screenX) + "," + Math.round(e.screenY));
+      if (src === 5 && tab) { e.preventDefault(); e.stopPropagation(); log("drag start: touch left to our pull"); }
+    }, true);
+    strip.addEventListener("dragend", e => {
+      log("drag end: effect " + e.dataTransfer?.dropEffect + " at " + Math.round(e.screenX) + "," +
+          Math.round(e.screenY) + ", window " + window.screenX + "," + window.screenY + " " +
+          window.outerWidth + "x" + window.outerHeight);
+    }, true);
+    function endOpenDrag(why) {
+      try {
+        const ds = Cc["@mozilla.org/widget/dragservice;1"].getService(Ci.nsIDragService);
+        let session = null;
+        try { session = ds.getCurrentSession(window); } catch (e) {}
+        try { session = session || ds.getCurrentSession(); } catch (e) {}
+        if (!session) return;
+        // On a window coming to the front, end only a drag whose tab has gone
+        // (moved to another window); a live drag between windows is left alone.
+        if (why === "window active" && session.sourceNode?.isConnected !== false) return;
+        log("drag: an unfinished drag was ended (" + why + ")");
+        if (session.endDragSession) session.endDragSession(true, 0);
+        else if (ds.endDragSession) ds.endDragSession(true, 0);
+      } catch (e) { log("drag: " + e); }
+    }
+    // A new window, or one coming back to the front, starts with no drag held over.
+    window.addEventListener("activate", () => endOpenDrag("window active"));
     let pulledAt = 0;
     function pullOut(tab, how) {
       if (Date.now() - pulledAt < 800 || !tab.isConnected) return;
       pulledAt = Date.now();
-      log("touch: tab pulled out (" + how + ")");
+      log("touch: tab pulled out (" + how + ", " + gBrowser.visibleTabs.length + " tabs)");
+      endOpenDrag("pull-out");
       if (gBrowser.visibleTabs.length > 1) gBrowser.replaceTabWithWindow(tab);
     }
     let openedAt = 0;
@@ -487,6 +524,6 @@
       if (e.ctrlKey && e.shiftKey && e.code === "Space") { setFolded(!folded()); e.preventDefault(); }
     }, true);
     doc.documentElement.setAttribute("output-browser", "true");
-    log("ready");
+    log("ready (" + gBrowser.tabs.length + " tabs, " + [...Services.wm.getEnumerator("navigator:browser")].length + " windows)");
   });
 })();
