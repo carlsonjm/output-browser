@@ -450,6 +450,26 @@
         log("after close: " + describeStrip() + (stuck.length ? " (finished " + stuck.length + " stuck close)" : ""));
       }, 450);
     }, 0));
+    // Groups sit at the left of the strip, after any pinned tabs; loose tabs
+    // follow them. A loose tab that lands ahead of a group moves to the end,
+    // keeping the loose tabs in their order.
+    let ordering = false;
+    const groupsFirst = () => {
+      if (ordering) return;
+      const tabs = [...gBrowser.tabs].filter(t => !t.pinned && !t.closing);
+      let last = -1;
+      tabs.forEach((t, i) => { if (t.group) last = i; });
+      const ahead = tabs.slice(0, last).filter(t => !t.group);
+      if (!ahead.length) return;
+      ordering = true;
+      try { for (const t of ahead) gBrowser.moveTabToEnd(t); }
+      catch (e) { log("groups first: " + e); }
+      finally { ordering = false; }
+      log("groups first: moved " + ahead.length + " loose tab(s) after the groups");
+    };
+    for (const ev of ["TabOpen", "TabMove", "TabGrouped", "TabUngrouped", "TabGroupCreate", "TabGroupExpand"])
+      gBrowser.tabContainer.addEventListener(ev, () => setTimeout(groupsFirst, 0));
+    setTimeout(groupsFirst, 500);
     // Ctrl+Shift+Space also folds the strip down and up.
     window.addEventListener("keydown", e => {
       if (e.ctrlKey && e.shiftKey && e.code === "Space") { setFolded(!folded()); e.preventDefault(); }
